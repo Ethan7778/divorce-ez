@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "divorce-ez-platform/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "installCommand": "cd divorce-ez-platform && npm install",
+  "buildCommand": "cd divorce-ez-platform && npm run build",
+  "outputDirectory": "divorce-ez-platform/dist"
+}
