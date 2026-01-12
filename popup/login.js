@@ -106,9 +106,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function getSupabaseAnonKey() {
-    // In production, this should be stored securely or retrieved from your platform
-    // For now, return a placeholder - you'll need to configure this
+    // Get from storage or use default
     const result = await chrome.storage.local.get(['supabaseAnonKey'])
-    return result.supabaseAnonKey || 'YOUR_SUPABASE_ANON_KEY'
+    return result.supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcXl3ZXVmZnh5b3JxdW11eXl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgyMzM2MTAsImV4cCI6MjA4MzgwOTYxMH0.7U8Gyl2y6xdlESnkMeBql0BUr3tS5lSVBky27CyFx84'
   }
 }

@@ -11,17 +11,9 @@
  * 2. Your Vercel/deployed site URL: https://your-app.vercel.app (if proxying API calls)
  */
 
-// Get platform URL from storage or use default
-// For now, we'll use Supabase Edge Function URL directly
-// TODO: Create Edge Function or use Vercel API routes
-let PLATFORM_URL = 'https://jjqyweuffxyorqumuyyu.supabase.co/functions/v1/api'; // Supabase Edge Function URL
-
-// Load platform URL from storage (users can configure in options)
-chrome.storage.local.get(['platformUrl'], (result) => {
-  if (result.platformUrl) {
-    PLATFORM_URL = result.platformUrl;
-  }
-});
+// Note: We query Supabase directly, so PLATFORM_URL is not needed for data fetching
+// It's only used for getUserProgress() which we can implement later if needed
+let PLATFORM_URL = null; // Not used - we query Supabase directly
 
 class ApiService {
   constructor() {
@@ -267,24 +259,42 @@ class ApiService {
 
   /**
    * Get user's progress
+   * Query Supabase directly instead of using Edge Function
    */
   async getUserProgress() {
     try {
-      const headers = await this.getAuthHeaders()
-      const apiPath = PLATFORM_URL.includes('/functions/v1') 
-        ? '/user/progress' 
-        : '/api/user/progress'
-      const response = await fetch(`${PLATFORM_URL}${apiPath}`, {
-        method: 'GET',
-        headers,
-      })
+      await this.init()
+      if (!this.accessToken) {
+        throw new Error('Not authenticated')
+      }
+
+      const supabaseUrl = 'https://jjqyweuffxyorqumuyyu.supabase.co'
+      const supabaseKey = await this.getSupabaseAnonKey()
+      const user = await this.getCurrentUser()
+      
+      if (!user) {
+        throw new Error('Could not get user ID')
+      }
+
+      const response = await fetch(
+        `${supabaseUrl}/rest/v1/user_progress?user_id=eq.${user.id}&select=*`,
+        {
+          method: 'GET',
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          }
+        }
+      )
 
       if (!response.ok) {
         throw new Error('Failed to fetch progress')
       }
 
       const data = await response.json()
-      return data.data
+      return data
     } catch (error) {
       console.error('Error fetching progress:', error)
       throw error
