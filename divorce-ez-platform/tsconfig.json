@@ -15,6 +15,6 @@
     "noEmit": true,
     "types": ["vite/client"]
   },
-  "include": ["src/main.tsx", "src/App.tsx", "src/index.css"],
+  "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
