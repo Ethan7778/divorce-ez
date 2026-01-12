@@ -3,14 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Divorce EZ - Document Upload</title>
+  <title>Divorce EZ - Auto-Fill Assistant</title>
   <link rel="stylesheet" href="popup.css">
-  <!-- Worker wrapper to fix CDN issues -->
-  <script src="../lib/tesseract-worker-wrapper.js"></script>
-  <!-- Tesseract.js for OCR -->
-  <script src="../lib/tesseract.min.js"></script>
-  <!-- PDF.js for PDF parsing -->
-  <script src="../lib/pdf.min.js"></script>
 </head>
 <body>
   <div class="container">
@@ -19,84 +13,49 @@
       <p class="subtitle">Utah Divorce Filing Assistant</p>
     </header>
 
-    <div class="upload-section">
-      <h2>Upload Documents</h2>
-      <p class="help-text">Upload your documents to extract information for auto-filling court forms.</p>
-
-      <div class="document-types">
-        <div class="doc-type">
-          <label>
-            <input type="radio" name="docType" value="driversLicense" checked>
-            <span>Driver's License</span>
-          </label>
-        </div>
-        <div class="doc-type">
-          <label>
-            <input type="radio" name="docType" value="taxReturn">
-            <span>Tax Return</span>
-          </label>
-        </div>
-        <div class="doc-type">
-          <label>
-            <input type="radio" name="docType" value="payStub">
-            <span>Pay Stub</span>
-          </label>
-        </div>
-        <div class="doc-type">
-          <label>
-            <input type="radio" name="docType" value="bankStatement">
-            <span>Bank Statement</span>
-          </label>
-        </div>
-        <div class="doc-type">
-          <label>
-            <input type="radio" name="docType" value="w2">
-            <span>W-2 Form</span>
-          </label>
-        </div>
-        <div class="doc-type">
-          <label>
-            <input type="radio" name="docType" value="1099">
-            <span>1099 Form</span>
-          </label>
-        </div>
+    <div class="sync-section" id="syncSection">
+      <h2>Sync from Platform</h2>
+      <p class="help-text">Documents are uploaded on the web platform. Sync your data here to use it for auto-filling forms.</p>
+      
+      <div class="connection-status" id="connectionStatus">
+        <div class="status-indicator" id="statusIndicator"></div>
+        <span id="connectionStatusText">Checking connection...</span>
       </div>
 
-      <div class="upload-area" id="uploadArea">
-        <input type="file" id="fileInput" accept=".pdf,.jpg,.jpeg,.png" style="position: absolute; opacity: 0; width: 100%; height: 100%; top: 0; left: 0; cursor: pointer; z-index: 10;">
-        <div class="upload-content">
-          <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="17 8 12 3 7 8"></polyline>
-            <line x1="12" y1="3" x2="12" y2="15"></line>
+      <div class="sync-controls">
+        <button class="sync-button primary" id="syncButton" disabled>Sync Now</button>
+        <a href="https://divorce-ez-4thewin.vercel.app" target="_blank" class="platform-link">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
           </svg>
-          <p class="upload-text">Drag & drop your document here</p>
-          <p class="upload-subtext">or click to browse</p>
+          Open Web Platform
+        </a>
+      </div>
+
+      <div class="last-sync" id="lastSync" style="display: none;">
+        <span class="sync-label">Last synced:</span>
+        <span id="lastSyncTime">Never</span>
+      </div>
+
+      <div class="data-summary" id="dataSummary" style="display: none;">
+        <h3>Synced Data</h3>
+        <div class="summary-item">
+          <span class="summary-label">Personal Info:</span>
+          <span class="summary-value" id="personalInfoCount">0 fields</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Financial Info:</span>
+          <span class="summary-value" id="financialInfoCount">0 fields</span>
         </div>
       </div>
-
-      <div class="file-info" id="fileInfo" style="display: none;">
-        <div class="file-name" id="fileName"></div>
-        <button class="remove-file" id="removeFile">×</button>
-      </div>
-
-      <button class="upload-button" id="uploadButton" disabled>Process Document</button>
     </div>
 
     <div class="status-section" id="statusSection" style="display: none;">
       <div class="status-message" id="statusMessage"></div>
       <div class="progress-bar" id="progressBar" style="display: none;">
         <div class="progress-fill" id="progressFill"></div>
-      </div>
-    </div>
-
-    <div class="sync-section" id="syncSection" style="display: none;">
-      <div class="sync-status" id="syncStatus">
-        <span id="syncStatusText">Not connected to platform</span>
-        <button class="sync-button" id="syncButton">Sync Now</button>
-      </div>
-      <div class="last-sync" id="lastSync" style="display: none;">
-        Last synced: <span id="lastSyncTime"></span>
       </div>
     </div>
 
