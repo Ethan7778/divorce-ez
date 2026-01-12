@@ -1,4 +1,6 @@
-# Ignore everything except the platform directory
-*
-!divorce-ez-platform/
-!vercel.json
+# Only ignore build artifacts and unnecessary files
+node_modules/
+.git/
+*.log
+.env.local
+.env*.local
