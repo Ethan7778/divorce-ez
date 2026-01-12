@@ -1,4 +1,10 @@
 {
+  "name": "divorce-ez",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd divorce-ez-platform && npm install && npm run build"
+  },
   "dependencies": {
     "pdfjs-dist": "^5.4.530",
     "tesseract.js": "^7.0.0"

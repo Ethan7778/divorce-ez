@@ -1,7 +1,6 @@
 {
-  "buildCommand": "npm install && npm run build",
-  "outputDirectory": "dist",
-  "installCommand": "npm install",
-  "framework": null,
-  "rootDirectory": "divorce-ez-platform"
+  "buildCommand": "cd divorce-ez-platform && npm install && npm run build",
+  "outputDirectory": "divorce-ez-platform/dist",
+  "installCommand": "cd divorce-ez-platform && npm install",
+  "framework": null
 }
