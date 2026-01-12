@@ -12,7 +12,9 @@
  */
 
 // Get platform URL from storage or use default
-let PLATFORM_URL = 'https://your-platform-domain.com'; // ⚠️ UPDATE THIS!
+// For now, we'll use Supabase Edge Function URL directly
+// TODO: Create Edge Function or use Vercel API routes
+let PLATFORM_URL = 'https://jjqyweuffxyorqumuyyu.supabase.co/functions/v1/api'; // Supabase Edge Function URL
 
 // Load platform URL from storage (users can configure in options)
 chrome.storage.local.get(['platformUrl'], (result) => {
