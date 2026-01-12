@@ -27,13 +27,18 @@ class ApiService {
    */
   async init() {
     const result = await chrome.storage.local.get(['accessToken', 'refreshToken', 'expiresAt'])
-    this.accessToken = result.accessToken
-    this.refreshToken = result.refreshToken
-    this.tokenExpiry = result.expiresAt
+    this.accessToken = result.accessToken || null
+    this.refreshToken = result.refreshToken || null
+    this.tokenExpiry = result.expiresAt || null
 
     // Refresh token if expired
     if (this.tokenExpiry && Date.now() >= this.tokenExpiry) {
-      await this.refreshAccessToken()
+      try {
+        await this.refreshAccessToken()
+      } catch (error) {
+        console.warn('Token refresh failed during init:', error)
+        // Don't throw - allow user to re-authenticate
+      }
     }
   }
 
@@ -191,33 +196,49 @@ class ApiService {
             const extractedDataArray = await extractedDataResponse.json()
             if (extractedDataArray && extractedDataArray.length > 0) {
               const extracted = extractedDataArray[0].data
-              // Merge personal info
-              Object.assign(personalInfo, {
-                firstName: extracted.firstName || personalInfo.firstName,
-                lastName: extracted.lastName || personalInfo.lastName,
-                fullName: extracted.fullName || personalInfo.fullName,
-                dateOfBirth: extracted.dateOfBirth || personalInfo.dateOfBirth,
-                address: extracted.address || personalInfo.address,
-                city: extracted.city || personalInfo.city,
-                state: extracted.state || personalInfo.state,
-                zipCode: extracted.zipCode || personalInfo.zipCode,
-                ssn: extracted.ssn || personalInfo.ssn,
-                licenseNumber: extracted.licenseNumber || personalInfo.licenseNumber,
-              })
-              // Merge financial info
-              Object.assign(financialInfo, {
-                totalIncome: extracted.totalIncome || financialInfo.totalIncome,
-                grossPay: extracted.grossPay || financialInfo.grossPay,
-                netPay: extracted.netPay || financialInfo.netPay,
-                employerName: extracted.employerName || financialInfo.employerName,
-                filingStatus: extracted.filingStatus || financialInfo.filingStatus,
-                dependents: extracted.dependents || financialInfo.dependents,
-                bankName: extracted.bankName || financialInfo.bankName,
-                accountNumber: extracted.accountNumber || financialInfo.accountNumber,
-                balance: extracted.balance || financialInfo.balance,
-                wages: extracted.wages || financialInfo.wages,
-                adjustedGrossIncome: extracted.adjustedGrossIncome || financialInfo.adjustedGrossIncome,
-              })
+              
+              // Helper function to get value with fallback options
+              const getValue = (obj, ...keys) => {
+                for (const key of keys) {
+                  if (obj[key] != null && obj[key] !== '') return obj[key]
+                }
+                return null
+              }
+              
+              // Merge personal info - handle field name variations
+              if (!personalInfo.firstName) personalInfo.firstName = getValue(extracted, 'firstName', 'first_name', 'fname')
+              if (!personalInfo.lastName) personalInfo.lastName = getValue(extracted, 'lastName', 'last_name', 'lname')
+              if (!personalInfo.fullName) personalInfo.fullName = getValue(extracted, 'fullName', 'full_name', 'name')
+              if (!personalInfo.dateOfBirth) personalInfo.dateOfBirth = getValue(extracted, 'dateOfBirth', 'dob', 'birthDate', 'birth_date')
+              if (!personalInfo.ssn) personalInfo.ssn = getValue(extracted, 'ssn', 'socialSecurity', 'social_security')
+              if (!personalInfo.licenseNumber) personalInfo.licenseNumber = getValue(extracted, 'licenseNumber', 'license_number', 'driverLicenseNumber', 'driver_license_number', 'dlNumber', 'dl_number')
+              
+              // Handle address - can be string or object
+              if (!personalInfo.address) {
+                const addressStr = getValue(extracted, 'address', 'street', 'streetAddress', 'street_address')
+                const addressObj = extracted.address
+                if (addressStr && typeof addressStr === 'string') {
+                  personalInfo.address = addressStr
+                } else if (addressObj && typeof addressObj === 'object') {
+                  personalInfo.address = addressObj.street || addressObj.address || ''
+                }
+              }
+              if (!personalInfo.city) personalInfo.city = getValue(extracted, 'city')
+              if (!personalInfo.state) personalInfo.state = getValue(extracted, 'state')
+              if (!personalInfo.zipCode) personalInfo.zipCode = getValue(extracted, 'zipCode', 'zip', 'zip_code', 'postalCode', 'postal_code')
+              
+              // Merge financial info - handle field name variations
+              if (!financialInfo.totalIncome) financialInfo.totalIncome = getValue(extracted, 'totalIncome', 'total_income', 'income', 'annualIncome', 'annual_income')
+              if (!financialInfo.grossPay) financialInfo.grossPay = getValue(extracted, 'grossPay', 'gross_pay', 'gross', 'grossIncome', 'gross_income')
+              if (!financialInfo.netPay) financialInfo.netPay = getValue(extracted, 'netPay', 'net_pay', 'net', 'netIncome', 'net_income')
+              if (!financialInfo.employerName) financialInfo.employerName = getValue(extracted, 'employerName', 'employer_name', 'employer', 'company', 'companyName', 'company_name')
+              if (!financialInfo.filingStatus) financialInfo.filingStatus = getValue(extracted, 'filingStatus', 'filing_status', 'status')
+              if (!financialInfo.dependents) financialInfo.dependents = getValue(extracted, 'dependents', 'dependents_count', 'numDependents')
+              if (!financialInfo.bankName) financialInfo.bankName = getValue(extracted, 'bankName', 'bank_name', 'bank', 'financialInstitution', 'financial_institution')
+              if (!financialInfo.accountNumber) financialInfo.accountNumber = getValue(extracted, 'accountNumber', 'account_number', 'acctNumber', 'acct_number')
+              if (!financialInfo.balance) financialInfo.balance = getValue(extracted, 'balance', 'accountBalance', 'account_balance', 'currentBalance', 'current_balance')
+              if (!financialInfo.wages) financialInfo.wages = getValue(extracted, 'wages', 'wage', 'compensation', 'salary')
+              if (!financialInfo.adjustedGrossIncome) financialInfo.adjustedGrossIncome = getValue(extracted, 'adjustedGrossIncome', 'adjusted_gross_income', 'agi', 'AGI')
             }
           }
         }
@@ -316,6 +337,7 @@ class ApiService {
       // Will refresh on next API call
       return true
     }
+    // Token exists and not expired
     return true
   }
 

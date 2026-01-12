@@ -2,7 +2,114 @@ import { useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { processDocument } from '../services/ocrService'
-import { Document } from '../types'
+import type { Document, DocumentType, PersonalInfo, FinancialInfo } from '../types'
+
+/**
+ * Helper function to aggregate extracted data into form_data structure
+ */
+async function updateFormData(userId: string, extractedData: Record<string, any>) {
+  try {
+    // Get existing form_data
+    const { data: existingFormData, error: fetchError } = await supabase
+      .from('form_data')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    // Helper to get value with fallbacks
+    const getValue = (obj: Record<string, any>, ...keys: string[]) => {
+      for (const key of keys) {
+        if (obj[key] != null && obj[key] !== '') return obj[key]
+      }
+      return null
+    }
+
+    // Build personal_info
+    const personalInfo: Partial<PersonalInfo> = existingFormData?.personal_info || {}
+    if (!personalInfo.firstName) personalInfo.firstName = getValue(extractedData, 'firstName', 'first_name', 'fname') as string | undefined
+    if (!personalInfo.lastName) personalInfo.lastName = getValue(extractedData, 'lastName', 'last_name', 'lname') as string | undefined
+    if (!personalInfo.fullName) {
+      const fullName = getValue(extractedData, 'fullName', 'full_name', 'name') as string | undefined
+      if (fullName) personalInfo.fullName = fullName
+      else if (personalInfo.firstName && personalInfo.lastName) {
+        personalInfo.fullName = `${personalInfo.firstName} ${personalInfo.lastName}`
+      }
+    }
+    if (!personalInfo.dateOfBirth) personalInfo.dateOfBirth = getValue(extractedData, 'dateOfBirth', 'dob', 'birthDate', 'birth_date') as string | undefined
+    if (!personalInfo.ssn) personalInfo.ssn = getValue(extractedData, 'ssn', 'socialSecurity', 'social_security') as string | undefined
+    if (!personalInfo.driverLicenseNumber) personalInfo.driverLicenseNumber = getValue(extractedData, 'licenseNumber', 'license_number', 'driverLicenseNumber', 'driver_license_number', 'dlNumber', 'dl_number') as string | undefined
+    
+    // Handle address - can be string or object
+    if (!personalInfo.address) {
+      const addressStr = getValue(extractedData, 'address', 'street', 'streetAddress', 'street_address')
+      const addressObj = extractedData.address
+      if (addressStr && typeof addressStr === 'string') {
+        personalInfo.address = { street: addressStr }
+      } else if (addressObj && typeof addressObj === 'object') {
+        personalInfo.address = {
+          street: addressObj.street || addressObj.address || '',
+          city: addressObj.city || '',
+          state: addressObj.state || '',
+          zipCode: addressObj.zipCode || addressObj.zip || '',
+        }
+      }
+    }
+    if (!personalInfo.address?.city) {
+      const city = getValue(extractedData, 'city') as string | undefined
+      if (city) personalInfo.address = { ...personalInfo.address, city }
+    }
+    if (!personalInfo.address?.state) {
+      const state = getValue(extractedData, 'state') as string | undefined
+      if (state) personalInfo.address = { ...personalInfo.address, state }
+    }
+    if (!personalInfo.address?.zipCode) {
+      const zipCode = getValue(extractedData, 'zipCode', 'zip', 'zip_code', 'postalCode', 'postal_code') as string | undefined
+      if (zipCode) personalInfo.address = { ...personalInfo.address, zipCode }
+    }
+
+    // Build financial_info
+    const financialInfo: Partial<FinancialInfo> = existingFormData?.financial_info || {}
+    const income = financialInfo.income || {}
+    if (!income.annual) income.annual = getValue(extractedData, 'totalIncome', 'total_income', 'income', 'annualIncome', 'annual_income', 'adjustedGrossIncome', 'adjusted_gross_income', 'agi', 'AGI') as number | undefined
+    if (!income.monthly) income.monthly = getValue(extractedData, 'grossPay', 'gross_pay', 'gross', 'netPay', 'net_pay', 'net') as number | undefined
+    financialInfo.income = income
+
+    // Bank accounts
+    if (!financialInfo.bankAccounts || financialInfo.bankAccounts.length === 0) {
+      const bankName = getValue(extractedData, 'bankName', 'bank_name', 'bank', 'financialInstitution', 'financial_institution') as string | undefined
+      const accountNumber = getValue(extractedData, 'accountNumber', 'account_number', 'acctNumber', 'acct_number') as string | undefined
+      const balance = getValue(extractedData, 'balance', 'accountBalance', 'account_balance', 'currentBalance', 'current_balance')
+      if (bankName || accountNumber || balance) {
+        financialInfo.bankAccounts = [{
+          bankName: bankName,
+          accountNumber: accountNumber,
+          balance: balance ? Number(balance) : undefined,
+        }]
+      }
+    }
+
+    // Upsert form_data
+    const { error: upsertError } = await supabase
+      .from('form_data')
+      .upsert(
+        {
+          user_id: userId,
+          personal_info: personalInfo,
+          financial_info: financialInfo,
+          last_updated: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' }
+      )
+
+    if (upsertError) {
+      console.error('Failed to update form_data:', upsertError)
+      // Don't throw - this is optional aggregation
+    }
+  } catch (error) {
+    console.error('Error updating form_data:', error)
+    // Don't throw - this is optional aggregation
+  }
+}
 
 const documentTypes: { value: Document['document_type']; label: string }[] = [
   { value: 'driversLicense', label: "Driver's License" },
@@ -93,6 +200,9 @@ export default function DocumentUpload() {
       if (dataError) {
         throw new Error(`Failed to save extracted data: ${dataError.message}`)
       }
+
+      // Step 5: Update form_data table with aggregated data
+      await updateFormData(user.id, processed.extractedData)
 
       setProgress(100)
       setSuccess('Document processed and uploaded successfully!')

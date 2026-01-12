@@ -48,19 +48,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'isAuthenticated') {
-    apiService.init().then(() => {
-      apiService.isAuthenticated()
-        .then(isAuthenticated => sendResponse({ success: true, isAuthenticated }))
-        .catch(error => {
-          // Don't fail on network errors - just return false
-          console.warn('Auth check error:', error);
-          sendResponse({ success: true, isAuthenticated: false });
-        });
-    }).catch(error => {
-      console.warn('API service init error:', error);
-      sendResponse({ success: true, isAuthenticated: false });
-    });
-    return true;
+    (async () => {
+      try {
+        await apiService.init();
+        const isAuthenticated = await apiService.isAuthenticated();
+        sendResponse({ success: true, isAuthenticated });
+      } catch (error) {
+        console.warn('Auth check error:', error);
+        sendResponse({ success: true, isAuthenticated: false });
+      }
+    })();
+    return true; // Keep the channel open for async response
   }
 });
 
@@ -105,14 +103,20 @@ async function getDataWithFallback() {
  */
 async function syncFromPlatform() {
   try {
+    console.log('Starting sync from platform...');
     await apiService.init();
+    console.log('API service initialized');
+    
     const isAuthenticated = await apiService.isAuthenticated();
+    console.log('Authentication status:', isAuthenticated);
     
     if (!isAuthenticated) {
-      throw new Error('Not authenticated');
+      throw new Error('Not authenticated. Please log in first.');
     }
 
+    console.log('Fetching user form data...');
     const formData = await apiService.getUserFormData();
+    console.log('Form data received:', formData);
     
     if (formData) {
       const dataToSave = {
@@ -122,13 +126,23 @@ async function syncFromPlatform() {
         syncedAt: new Date().toISOString(),
       };
 
+      console.log('Saving data to local storage:', dataToSave);
       await storageManager.saveData(dataToSave);
       await chrome.storage.local.set({ lastSyncTime: Date.now() });
       
+      console.log('Sync completed successfully');
       return dataToSave;
+    } else {
+      console.warn('No form data returned from API');
+      throw new Error('No data found. Please upload documents on the web platform first.');
     }
   } catch (error) {
     console.error('Sync error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
     throw error;
   }
 }

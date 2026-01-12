@@ -8,11 +8,13 @@
   },
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "identity"
   ],
   "host_permissions": [
     "https://mycase.utcourts.gov/*",
-    "https://your-platform-domain.com/*"
+    "https://jjqyweuffxyorqumuyyu.supabase.co/*",
+    "https://divorce-huw6ts83v-ethans-projects-a966bcc9.vercel.app/*"
   ],
   "background": {
     "service_worker": "scripts/background.js"

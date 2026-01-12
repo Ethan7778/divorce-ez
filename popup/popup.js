@@ -64,6 +64,7 @@ async function checkAuthStatus() {
 
   try {
     const response = await chrome.runtime.sendMessage({ action: 'isAuthenticated' });
+    console.log('Auth check response:', response);
     
     if (response && response.success && response.isAuthenticated) {
       // Connected
@@ -86,6 +87,7 @@ async function checkAuthStatus() {
       connectionStatusText.textContent = 'Not connected to platform';
       syncButton.disabled = true;
       loginButton.style.display = 'block';
+      console.log('Not authenticated. Response:', response);
     }
   } catch (error) {
     console.error('Error checking auth status:', error);
@@ -149,14 +151,23 @@ async function syncWithPlatform() {
         progressBar.style.display = 'none';
       }, 3000);
     } else {
-      statusMessage.textContent = `Sync failed: ${response.error || 'Unknown error'}`;
+      const errorMsg = response.error || 'Unknown error'
+      statusMessage.textContent = `Sync failed: ${errorMsg}`;
       statusMessage.className = 'status-message error';
+      console.error('Sync failed:', response);
+      
+      // Show more details in console for debugging
+      if (response.error) {
+        console.error('Sync error details:', response.error);
+      }
     }
   } catch (error) {
     clearInterval(progressInterval);
-    statusMessage.textContent = `Error: ${error.message}`;
+    const errorMsg = error.message || 'Unknown error occurred'
+    statusMessage.textContent = `Error: ${errorMsg}`;
     statusMessage.className = 'status-message error';
     console.error('Sync error:', error);
+    console.error('Error stack:', error.stack);
   } finally {
     syncButton.disabled = false;
   }
