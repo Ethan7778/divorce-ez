@@ -199,33 +199,34 @@ class ApiService {
             const extractedDataArray = await extractedDataResponse.json()
             if (extractedDataArray && extractedDataArray.length > 0) {
               const extracted = extractedDataArray[0].data
-            // Merge personal info
-            Object.assign(personalInfo, {
-              firstName: extracted.firstName || personalInfo.firstName,
-              lastName: extracted.lastName || personalInfo.lastName,
-              fullName: extracted.fullName || personalInfo.fullName,
-              dateOfBirth: extracted.dateOfBirth || personalInfo.dateOfBirth,
-              address: extracted.address || personalInfo.address,
-              city: extracted.city || personalInfo.city,
-              state: extracted.state || personalInfo.state,
-              zipCode: extracted.zipCode || personalInfo.zipCode,
-              ssn: extracted.ssn || personalInfo.ssn,
-              licenseNumber: extracted.licenseNumber || personalInfo.licenseNumber,
-            })
-            // Merge financial info
-            Object.assign(financialInfo, {
-              totalIncome: extracted.totalIncome || financialInfo.totalIncome,
-              grossPay: extracted.grossPay || financialInfo.grossPay,
-              netPay: extracted.netPay || financialInfo.netPay,
-              employerName: extracted.employerName || financialInfo.employerName,
-              filingStatus: extracted.filingStatus || financialInfo.filingStatus,
-              dependents: extracted.dependents || financialInfo.dependents,
-              bankName: extracted.bankName || financialInfo.bankName,
-              accountNumber: extracted.accountNumber || financialInfo.accountNumber,
-              balance: extracted.balance || financialInfo.balance,
-              wages: extracted.wages || financialInfo.wages,
-              adjustedGrossIncome: extracted.adjustedGrossIncome || financialInfo.adjustedGrossIncome,
-            })
+              // Merge personal info
+              Object.assign(personalInfo, {
+                firstName: extracted.firstName || personalInfo.firstName,
+                lastName: extracted.lastName || personalInfo.lastName,
+                fullName: extracted.fullName || personalInfo.fullName,
+                dateOfBirth: extracted.dateOfBirth || personalInfo.dateOfBirth,
+                address: extracted.address || personalInfo.address,
+                city: extracted.city || personalInfo.city,
+                state: extracted.state || personalInfo.state,
+                zipCode: extracted.zipCode || personalInfo.zipCode,
+                ssn: extracted.ssn || personalInfo.ssn,
+                licenseNumber: extracted.licenseNumber || personalInfo.licenseNumber,
+              })
+              // Merge financial info
+              Object.assign(financialInfo, {
+                totalIncome: extracted.totalIncome || financialInfo.totalIncome,
+                grossPay: extracted.grossPay || financialInfo.grossPay,
+                netPay: extracted.netPay || financialInfo.netPay,
+                employerName: extracted.employerName || financialInfo.employerName,
+                filingStatus: extracted.filingStatus || financialInfo.filingStatus,
+                dependents: extracted.dependents || financialInfo.dependents,
+                bankName: extracted.bankName || financialInfo.bankName,
+                accountNumber: extracted.accountNumber || financialInfo.accountNumber,
+                balance: extracted.balance || financialInfo.balance,
+                wages: extracted.wages || financialInfo.wages,
+                adjustedGrossIncome: extracted.adjustedGrossIncome || financialInfo.adjustedGrossIncome,
+              })
+            }
           }
         }
 
