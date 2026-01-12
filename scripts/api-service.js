@@ -54,7 +54,9 @@ class ApiService {
     }
 
     try {
-      const response = await fetch(`${PLATFORM_URL}/auth/v1/token?grant_type=refresh_token`, {
+      // Use Supabase auth endpoint directly
+      const supabaseUrl = 'https://jjqyweuffxyorqumuyyu.supabase.co'
+      const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -115,46 +117,150 @@ class ApiService {
 
   /**
    * Get user's form data from platform
+   * For now, we'll query Supabase directly since Edge Function doesn't exist yet
    */
   async getUserFormData() {
     try {
-      const headers = await this.getAuthHeaders()
-      // If PLATFORM_URL is Supabase Edge Function, path is already included
-      // If PLATFORM_URL is Vercel, need /api/user/data
-      const apiPath = PLATFORM_URL.includes('/functions/v1') 
-        ? '/user/data' 
-        : '/api/user/data'
-      const response = await fetch(`${PLATFORM_URL}${apiPath}`, {
-        method: 'GET',
-        headers,
-      })
+      await this.init()
+      if (!this.accessToken) {
+        throw new Error('Not authenticated')
+      }
 
-      if (response.status === 401) {
-        // Token expired, try refresh
-        await this.refreshAccessToken()
-        const newHeaders = await this.getAuthHeaders()
-        const retryResponse = await fetch(`${PLATFORM_URL}${apiPath}`, {
+      // Query Supabase directly using REST API
+      const supabaseUrl = 'https://jjqyweuffxyorqumuyyu.supabase.co'
+      const supabaseKey = await this.getSupabaseAnonKey()
+      
+      // Get user ID from token (decode JWT)
+      const user = await this.getCurrentUser()
+      if (!user) {
+        throw new Error('Could not get user ID')
+      }
+
+      // First, try to get from form_data table
+      const formDataResponse = await fetch(
+        `${supabaseUrl}/rest/v1/form_data?user_id=eq.${user.id}&select=*`,
+        {
           method: 'GET',
-          headers: newHeaders,
-        })
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          }
+        }
+      )
 
-        if (!retryResponse.ok) {
-          throw new Error('Failed to fetch user data')
+      if (formDataResponse.ok) {
+        const formDataArray = await formDataResponse.json()
+        if (formDataArray && formDataArray.length > 0) {
+          return {
+            personal_info: formDataArray[0].personal_info || {},
+            financial_info: formDataArray[0].financial_info || {}
+          }
+        }
+      }
+
+      // If no form_data, aggregate from extracted_data via documents
+      // First get documents
+      const documentsResponse = await fetch(
+        `${supabaseUrl}/rest/v1/documents?user_id=eq.${user.id}&select=id`,
+        {
+          method: 'GET',
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          }
+        }
+      )
+
+      if (documentsResponse.ok) {
+        const documents = await documentsResponse.json()
+        const personalInfo = {}
+        const financialInfo = {}
+
+        // Get extracted data for each document
+        for (const doc of documents) {
+          const extractedDataResponse = await fetch(
+            `${supabaseUrl}/rest/v1/extracted_data?document_id=eq.${doc.id}&select=data`,
+            {
+              method: 'GET',
+              headers: {
+                'apikey': supabaseKey,
+                'Authorization': `Bearer ${this.accessToken}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+              }
+            }
+          )
+          
+          if (extractedDataResponse.ok) {
+            const extractedDataArray = await extractedDataResponse.json()
+            if (extractedDataArray && extractedDataArray.length > 0) {
+              const extracted = extractedDataArray[0].data
+            // Merge personal info
+            Object.assign(personalInfo, {
+              firstName: extracted.firstName || personalInfo.firstName,
+              lastName: extracted.lastName || personalInfo.lastName,
+              fullName: extracted.fullName || personalInfo.fullName,
+              dateOfBirth: extracted.dateOfBirth || personalInfo.dateOfBirth,
+              address: extracted.address || personalInfo.address,
+              city: extracted.city || personalInfo.city,
+              state: extracted.state || personalInfo.state,
+              zipCode: extracted.zipCode || personalInfo.zipCode,
+              ssn: extracted.ssn || personalInfo.ssn,
+              licenseNumber: extracted.licenseNumber || personalInfo.licenseNumber,
+            })
+            // Merge financial info
+            Object.assign(financialInfo, {
+              totalIncome: extracted.totalIncome || financialInfo.totalIncome,
+              grossPay: extracted.grossPay || financialInfo.grossPay,
+              netPay: extracted.netPay || financialInfo.netPay,
+              employerName: extracted.employerName || financialInfo.employerName,
+              filingStatus: extracted.filingStatus || financialInfo.filingStatus,
+              dependents: extracted.dependents || financialInfo.dependents,
+              bankName: extracted.bankName || financialInfo.bankName,
+              accountNumber: extracted.accountNumber || financialInfo.accountNumber,
+              balance: extracted.balance || financialInfo.balance,
+              wages: extracted.wages || financialInfo.wages,
+              adjustedGrossIncome: extracted.adjustedGrossIncome || financialInfo.adjustedGrossIncome,
+            })
+          }
         }
 
-        const data = await retryResponse.json()
-        return data.data
+        return {
+          personal_info: personalInfo,
+          financial_info: financialInfo
+        }
       }
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch user data')
+      // Return empty if nothing found
+      return {
+        personal_info: {},
+        financial_info: {}
       }
-
-      const data = await response.json()
-      return data.data
     } catch (error) {
       console.error('Error fetching user data:', error)
       throw error
+    }
+  }
+
+  /**
+   * Get current user from token
+   */
+  async getCurrentUser() {
+    try {
+      // Decode JWT to get user ID
+      const tokenParts = this.accessToken.split('.')
+      if (tokenParts.length !== 3) {
+        throw new Error('Invalid token format')
+      }
+      const payload = JSON.parse(atob(tokenParts[1]))
+      return { id: payload.sub, email: payload.email }
+    } catch (error) {
+      console.error('Error decoding token:', error)
+      return null
     }
   }
 
@@ -207,7 +313,8 @@ class ApiService {
    */
   async getSupabaseAnonKey() {
     const result = await chrome.storage.local.get(['supabaseAnonKey'])
-    return result.supabaseAnonKey || 'YOUR_SUPABASE_ANON_KEY'
+    // Default key for your project (should be stored securely in production)
+    return result.supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqcXl3ZXVmZnh5b3JxdW11eXl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgyMzM2MTAsImV4cCI6MjA4MzgwOTYxMH0.7U8Gyl2y6xdlESnkMeBql0BUr3tS5lSVBky27CyFx84'
   }
 }
 
