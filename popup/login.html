@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Divorce EZ - Login</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Divorce EZ</h1>
+      <p class="subtitle">Connect to Platform</p>
+    </header>
+
+    <div class="login-section">
+      <div id="loginForm">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" placeholder="your@email.com" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Password" required>
+        </div>
+        <button class="upload-button" id="loginButton">Sign In</button>
+        <p class="help-text" style="text-align: center; margin-top: 15px;">
+          Don't have an account? <a href="#" id="signupLink">Sign up on the web platform</a>
+        </p>
+      </div>
+
+      <div id="loginStatus" style="display: none;">
+        <div class="status-message" id="statusMessage"></div>
+      </div>
+    </div>
+
+    <footer>
+      <p class="privacy-note">Your data is securely stored and encrypted</p>
+    </footer>
+  </div>
+
+  <script src="login.js"></script>
+</body>
+</html>

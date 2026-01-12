@@ -1,0 +1,341 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  width: 400px;
+  min-height: 500px;
+  background: #f5f5f5;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px;
+  text-align: center;
+}
+
+header h1 {
+  font-size: 24px;
+  margin-bottom: 5px;
+}
+
+.subtitle {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.upload-section {
+  padding: 20px;
+  flex: 1;
+}
+
+.upload-section h2 {
+  font-size: 18px;
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.help-text {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 15px;
+}
+
+.document-types {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.doc-type label {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.doc-type label:hover {
+  border-color: #667eea;
+  background: #f0f0ff;
+}
+
+.doc-type input[type="radio"] {
+  margin-right: 8px;
+}
+
+.doc-type input[type="radio"]:checked + span {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.doc-type input[type="radio"]:checked ~ span,
+.doc-type:has(input[type="radio"]:checked) label {
+  border-color: #667eea;
+  background: #f0f0ff;
+}
+
+.upload-area {
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  padding: 30px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  margin-bottom: 15px;
+  background: white;
+  position: relative;
+}
+
+.upload-area:hover {
+  border-color: #667eea;
+  background: #f9f9ff;
+}
+
+.upload-area.dragover {
+  border-color: #667eea;
+  background: #f0f0ff;
+}
+
+.upload-content {
+  pointer-events: none;
+  position: relative;
+  z-index: 1;
+}
+
+.upload-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 15px;
+  color: #667eea;
+}
+
+.upload-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 5px;
+}
+
+.upload-subtext {
+  font-size: 12px;
+  color: #666;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: #e8f5e9;
+  border-radius: 6px;
+  margin-bottom: 15px;
+}
+
+.file-name {
+  font-size: 13px;
+  color: #2e7d32;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remove-file {
+  background: #f44336;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  margin-left: 10px;
+  flex-shrink: 0;
+}
+
+.remove-file:hover {
+  background: #d32f2f;
+}
+
+.upload-button {
+  width: 100%;
+  padding: 12px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.upload-button:hover:not(:disabled) {
+  background: #5568d3;
+}
+
+.upload-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.status-section {
+  padding: 15px 20px;
+  background: white;
+  margin: 0 20px 20px;
+  border-radius: 6px;
+}
+
+.status-message {
+  font-size: 13px;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.status-message.success {
+  color: #2e7d32;
+}
+
+.status-message.error {
+  color: #d32f2f;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 4px;
+  background: #e0e0e0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #667eea;
+  width: 0%;
+  transition: width 0.3s;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  padding: 0 20px 20px;
+}
+
+.action-button {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: white;
+  color: #333;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.action-button:hover {
+  background: #f5f5f5;
+  border-color: #999;
+}
+
+.action-button.secondary {
+  background: #f5f5f5;
+}
+
+footer {
+  padding: 15px 20px;
+  text-align: center;
+  border-top: 1px solid #e0e0e0;
+  background: white;
+}
+
+.privacy-note {
+  font-size: 11px;
+  color: #666;
+}
+
+.sync-section {
+  margin: 15px 20px;
+  padding: 12px;
+  background: #f9f9f9;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+}
+
+.sync-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.sync-status span {
+  font-size: 12px;
+  color: #666;
+}
+
+.sync-button {
+  padding: 4px 12px;
+  font-size: 11px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sync-button:hover {
+  background: #5568d3;
+}
+
+.sync-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.last-sync {
+  font-size: 10px;
+  color: #999;
+  text-align: right;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 5px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #667eea;
+}

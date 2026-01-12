@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Divorce EZ - Options</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Divorce EZ - Options</h1>
+      <p class="subtitle">Manage your stored data and settings</p>
+    </header>
+
+    <div class="content">
+      <section class="data-section">
+        <h2>Stored Information</h2>
+        <div class="data-container" id="dataContainer">
+          <div class="loading">Loading data...</div>
+        </div>
+      </section>
+
+      <section class="actions-section">
+        <h2>Actions</h2>
+        <div class="action-buttons">
+          <button class="action-btn primary" id="refreshButton">Refresh Data</button>
+          <button class="action-btn secondary" id="editButton">Edit Data</button>
+          <button class="action-btn danger" id="clearButton">Clear All Data</button>
+        </div>
+      </section>
+
+      <section class="edit-section" id="editSection" style="display: none;">
+        <h2>Edit Information</h2>
+        <div class="edit-form" id="editForm">
+          <!-- Form fields will be generated dynamically -->
+        </div>
+        <div class="edit-actions">
+          <button class="action-btn primary" id="saveButton">Save Changes</button>
+          <button class="action-btn secondary" id="cancelButton">Cancel</button>
+        </div>
+      </section>
+
+      <section class="privacy-section">
+        <h2>Privacy & Security</h2>
+        <div class="privacy-info">
+          <p>✓ All data is stored locally on your device</p>
+          <p>✓ Sensitive information is encrypted</p>
+          <p>✓ No data is sent to external servers</p>
+          <p>✓ You can clear all data at any time</p>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
