@@ -2,5 +2,11 @@
   "buildCommand": "cd divorce-ez-platform && npm install && npm run build",
   "outputDirectory": "divorce-ez-platform/dist",
   "installCommand": "cd divorce-ez-platform && npm install",
-  "framework": null
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
 }
