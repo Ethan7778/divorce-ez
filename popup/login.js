@@ -8,7 +8,7 @@
 
 // ⚠️ UPDATE THESE URLs:
 const SUPABASE_URL = 'https://jjqyweuffxyorqumuyyu.supabase.co' // Your Supabase project URL
-const PLATFORM_URL = 'https://divorce-ez-4thewin.vercel.app/' // Your deployed site URL (for signup link)
+const PLATFORM_URL = 'https://divorce-huw6ts83v-ethans-projects-a966bcc9.vercel.app/' // Your deployed site URL (for signup link)
 
 document.addEventListener('DOMContentLoaded', () => {
   const loginForm = document.getElementById('loginForm')
