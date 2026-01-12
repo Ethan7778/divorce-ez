@@ -293,10 +293,20 @@ class ApiService {
 
   /**
    * Check if user is authenticated
+   * Just checks if tokens exist and are valid - doesn't make network calls
    */
   async isAuthenticated() {
     await this.init()
-    return !!this.accessToken && this.tokenExpiry > Date.now()
+    if (!this.accessToken || !this.refreshToken) {
+      return false
+    }
+    // Check if token is expired
+    if (this.tokenExpiry && Date.now() >= this.tokenExpiry) {
+      // Token expired, but we have refresh token, so still "authenticated"
+      // Will refresh on next API call
+      return true
+    }
+    return true
   }
 
   /**

@@ -65,7 +65,7 @@ async function checkAuthStatus() {
   try {
     const response = await chrome.runtime.sendMessage({ action: 'isAuthenticated' });
     
-    if (response.success && response.isAuthenticated) {
+    if (response && response.success && response.isAuthenticated) {
       // Connected
       statusIndicator.className = 'status-indicator connected';
       connectionStatusText.textContent = 'Connected to platform';
@@ -89,8 +89,9 @@ async function checkAuthStatus() {
     }
   } catch (error) {
     console.error('Error checking auth status:', error);
-    statusIndicator.className = 'status-indicator error';
-    connectionStatusText.textContent = 'Error checking connection';
+    // On error, assume not connected but don't show error state
+    statusIndicator.className = 'status-indicator disconnected';
+    connectionStatusText.textContent = 'Not connected to platform';
     syncButton.disabled = true;
     loginButton.style.display = 'block';
   }
