@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+divorce-ez-platform/node_modules/
+
+# Build outputs
+dist/
+divorce-ez-platform/dist/
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env*.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
