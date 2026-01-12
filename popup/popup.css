@@ -450,6 +450,18 @@ footer {
   border-color: #667eea;
 }
 
+.login-section {
+  padding: 20px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.login-section #loginForm {
+  display: flex;
+  flex-direction: column;
+}
+
 .oauth-button {
   width: 100%;
   padding: 12px;
@@ -461,10 +473,12 @@ footer {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: center;
   margin-bottom: 15px;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 .oauth-button:hover {

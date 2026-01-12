@@ -25,6 +25,16 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error('Google login button not found!')
   } else {
     console.log('Google login button found:', googleLoginButton)
+    // Ensure button is visible
+    googleLoginButton.style.display = 'flex'
+    googleLoginButton.style.visibility = 'visible'
+    googleLoginButton.style.opacity = '1'
+  }
+
+  // Ensure login form is visible
+  if (loginForm) {
+    loginForm.style.display = 'flex'
+    loginForm.style.flexDirection = 'column'
   }
 
   // Check if already logged in
