@@ -7,6 +7,7 @@ interface AuthContextType {
   session: Session | null
   signIn: (email: string, password: string) => Promise<any>
   signUp: (email: string, password: string) => Promise<any>
+  signInWithOAuth: (provider: 'google' | 'github' | 'facebook') => Promise<any>
   signOut: () => Promise<any>
   loading: boolean
 }
@@ -19,6 +20,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Check for OAuth callback in URL hash
+    const hashParams = new URLSearchParams(window.location.hash.substring(1))
+    const accessToken = hashParams.get('access_token')
+    const refreshToken = hashParams.get('refresh_token')
+    
+    // If we have tokens in the URL, Supabase will handle them automatically
+    // Clear the hash from URL after processing
+    if (accessToken || refreshToken) {
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setUser(session?.user || null)
@@ -52,6 +64,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return data
   }
 
+  const signInWithOAuth = async (provider: 'google' | 'github' | 'facebook') => {
+    setLoading(true)
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
+    })
+    setLoading(false)
+    if (error) throw error
+    return data
+  }
+
   const signOut = async () => {
     setLoading(true)
     const { error } = await supabase.auth.signOut()
@@ -60,7 +85,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, signIn, signUp, signOut, loading }}>
+    <AuthContext.Provider value={{ user, session, signIn, signUp, signInWithOAuth, signOut, loading }}>
       {children}
     </AuthContext.Provider>
   )
