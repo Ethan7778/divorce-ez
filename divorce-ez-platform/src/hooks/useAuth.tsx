@@ -66,10 +66,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signInWithOAuth = async (provider: 'google' | 'github' | 'facebook') => {
     setLoading(true)
+    // Always use production URL for OAuth redirects to avoid localhost issues
+    // In development, you can set VITE_SITE_URL to http://localhost:5173
+    const currentOrigin = window.location.origin
+    const isDevelopment = currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1')
+    const redirectUrl = import.meta.env.VITE_SITE_URL || (isDevelopment ? currentOrigin : 'https://divorce-huw6ts83v-ethans-projects-a966bcc9.vercel.app')
+    
+    console.log('OAuth redirect URL:', `${redirectUrl}/dashboard`)
+    
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: `${redirectUrl}/dashboard`,
       },
     })
     setLoading(false)
