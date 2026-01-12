@@ -46,6 +46,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }
+
+  if (request.action === 'isAuthenticated') {
+    apiService.init().then(() => {
+      apiService.isAuthenticated()
+        .then(isAuthenticated => sendResponse({ success: true, isAuthenticated }))
+        .catch(error => {
+          // Don't fail on network errors - just return false
+          console.warn('Auth check error:', error);
+          sendResponse({ success: true, isAuthenticated: false });
+        });
+    }).catch(error => {
+      console.warn('API service init error:', error);
+      sendResponse({ success: true, isAuthenticated: false });
+    });
+    return true;
+  }
 });
 
 /**
