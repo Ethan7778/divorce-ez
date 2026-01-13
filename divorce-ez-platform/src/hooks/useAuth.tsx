@@ -66,18 +66,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signInWithOAuth = async (provider: 'google' | 'github' | 'facebook') => {
     setLoading(true)
-    // Always use production URL for OAuth redirects to avoid localhost issues
-    // In development, you can set VITE_SITE_URL to http://localhost:5173
+    // Force production URL - never use localhost for OAuth redirects in production
+    // This ensures Supabase redirects to the correct deployed URL
+    const productionUrl = 'https://divorce-huw6ts83v-ethans-projects-a966bcc9.vercel.app'
     const currentOrigin = window.location.origin
     const isDevelopment = currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1')
-    const redirectUrl = import.meta.env.VITE_SITE_URL || (isDevelopment ? currentOrigin : 'https://divorce-huw6ts83v-ethans-projects-a966bcc9.vercel.app')
     
-    console.log('OAuth redirect URL:', `${redirectUrl}/dashboard`)
+    // Use environment variable if set, otherwise use production URL (never localhost in production)
+    const redirectUrl = import.meta.env.VITE_SITE_URL || (isDevelopment ? currentOrigin : productionUrl)
+    
+    console.log('OAuth redirect URL:', `${redirectUrl}/dashboard`, 'Current origin:', currentOrigin)
     
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
         redirectTo: `${redirectUrl}/dashboard`,
+        skipBrowserRedirect: false,
       },
     })
     setLoading(false)
