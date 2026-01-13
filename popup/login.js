@@ -99,9 +99,12 @@ document.addEventListener('DOMContentLoaded', () => {
         })
 
         showStatus('Successfully connected!', 'success')
+        // Notify background script and popup
+        chrome.runtime.sendMessage({ action: 'authSuccess' }, (response) => {
+          console.log('Auth success message sent:', response)
+        })
         setTimeout(() => {
           window.close()
-          chrome.runtime.sendMessage({ action: 'authSuccess' })
         }, 1500)
       } else {
         showStatus(data.error_description || 'Login failed', 'error')
@@ -205,11 +208,14 @@ document.addEventListener('DOMContentLoaded', () => {
               expiresAt: Date.now() + (parseInt(expiresIn || '3600') * 1000),
             })
 
-            showStatus('Successfully connected with Google!', 'success')
-            setTimeout(() => {
-              window.close()
-              chrome.runtime.sendMessage({ action: 'authSuccess' })
-            }, 1500)
+          showStatus('Successfully connected!', 'success')
+          // Notify background script and popup
+          chrome.runtime.sendMessage({ action: 'authSuccess' }, (response) => {
+            console.log('Auth success message sent:', response)
+          })
+          setTimeout(() => {
+            window.close()
+          }, 1500)
           } else {
             console.error('Missing tokens in callback URL:', callbackUrl)
             showStatus('Failed to get tokens from OAuth response. Please try again.', 'error')

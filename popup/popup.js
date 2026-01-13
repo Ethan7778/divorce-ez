@@ -7,6 +7,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   await checkAuthStatus();
   await updateDataSummary();
+  
+  // Listen for auth success messages (when user logs in)
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'authSuccess') {
+      // Refresh auth status and data when user logs in
+      checkAuthStatus();
+      updateDataSummary();
+    }
+  });
 });
 
 /**
@@ -63,6 +72,15 @@ async function checkAuthStatus() {
   const loginButton = document.getElementById('loginButton');
 
   try {
+    // Check if we have tokens stored
+    const tokenCheck = await chrome.storage.local.get(['accessToken', 'refreshToken', 'expiresAt']);
+    console.log('Token check:', {
+      hasAccessToken: !!tokenCheck.accessToken,
+      hasRefreshToken: !!tokenCheck.refreshToken,
+      expiresAt: tokenCheck.expiresAt ? new Date(tokenCheck.expiresAt).toLocaleString() : 'none',
+      isExpired: tokenCheck.expiresAt ? Date.now() >= tokenCheck.expiresAt : true
+    });
+
     const response = await chrome.runtime.sendMessage({ action: 'isAuthenticated' });
     console.log('Auth check response:', response);
     
@@ -70,32 +88,48 @@ async function checkAuthStatus() {
       // Connected
       statusIndicator.className = 'status-indicator connected';
       connectionStatusText.textContent = 'Connected to platform';
-      syncButton.disabled = false;
-      loginButton.style.display = 'none';
+      if (syncButton) {
+        syncButton.disabled = false;
+        syncButton.style.cursor = 'pointer';
+      }
+      if (loginButton) {
+        loginButton.style.display = 'none';
+      }
       
       // Update last sync time
       const lastSyncResponse = await chrome.storage.local.get(['lastSyncTime']);
       if (lastSyncResponse.lastSyncTime) {
         const lastSync = document.getElementById('lastSync');
         const lastSyncTime = document.getElementById('lastSyncTime');
-        lastSync.style.display = 'block';
-        lastSyncTime.textContent = new Date(lastSyncResponse.lastSyncTime).toLocaleString();
+        if (lastSync) lastSync.style.display = 'block';
+        if (lastSyncTime) lastSyncTime.textContent = new Date(lastSyncResponse.lastSyncTime).toLocaleString();
       }
     } else {
       // Not connected
       statusIndicator.className = 'status-indicator disconnected';
       connectionStatusText.textContent = 'Not connected to platform';
-      syncButton.disabled = true;
-      loginButton.style.display = 'block';
+      if (syncButton) {
+        syncButton.disabled = true;
+        syncButton.style.cursor = 'not-allowed';
+      }
+      if (loginButton) {
+        loginButton.style.display = 'block';
+      }
       console.log('Not authenticated. Response:', response);
+      console.log('To connect: Click "Connect to Platform" button and log in');
     }
   } catch (error) {
     console.error('Error checking auth status:', error);
     // On error, assume not connected but don't show error state
     statusIndicator.className = 'status-indicator disconnected';
     connectionStatusText.textContent = 'Not connected to platform';
-    syncButton.disabled = true;
-    loginButton.style.display = 'block';
+    if (syncButton) {
+      syncButton.disabled = true;
+      syncButton.style.cursor = 'not-allowed';
+    }
+    if (loginButton) {
+      loginButton.style.display = 'block';
+    }
   }
 }
 
