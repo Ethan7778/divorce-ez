@@ -66,26 +66,47 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signInWithOAuth = async (provider: 'google' | 'github' | 'facebook') => {
     setLoading(true)
-    // Force production URL - never use localhost for OAuth redirects in production
-    // This ensures Supabase redirects to the correct deployed URL
+    // ALWAYS use production URL for OAuth redirects
+    // Supabase will validate this against allowed redirect URLs in dashboard
     const productionUrl = 'https://divorce-huw6ts83v-ethans-projects-a966bcc9.vercel.app'
     const currentOrigin = window.location.origin
     const isDevelopment = currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1')
     
-    // Use environment variable if set, otherwise use production URL (never localhost in production)
-    const redirectUrl = import.meta.env.VITE_SITE_URL || (isDevelopment ? currentOrigin : productionUrl)
+    // In development, allow localhost. In production, ALWAYS use production URL
+    // This ensures Supabase redirects correctly
+    let redirectUrl: string
+    if (isDevelopment && import.meta.env.VITE_SITE_URL) {
+      // Development with custom URL
+      redirectUrl = import.meta.env.VITE_SITE_URL
+    } else if (isDevelopment) {
+      // Development - use localhost
+      redirectUrl = currentOrigin
+    } else {
+      // Production - ALWAYS use production URL, never localhost
+      redirectUrl = productionUrl
+    }
     
-    console.log('OAuth redirect URL:', `${redirectUrl}/dashboard`, 'Current origin:', currentOrigin)
+    const fullRedirectUrl = `${redirectUrl}/dashboard`
+    console.log('OAuth Configuration:', {
+      provider,
+      redirectUrl: fullRedirectUrl,
+      currentOrigin,
+      isDevelopment,
+      envSiteUrl: import.meta.env.VITE_SITE_URL
+    })
     
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${redirectUrl}/dashboard`,
+        redirectTo: fullRedirectUrl,
         skipBrowserRedirect: false,
       },
     })
     setLoading(false)
-    if (error) throw error
+    if (error) {
+      console.error('OAuth error:', error)
+      throw error
+    }
     return data
   }
 
