@@ -8,6 +8,11 @@ importScripts('api-service.js');
 
 const storageManager = new StorageManager();
 
+// Ensure apiService is available (it should be set globally by api-service.js)
+if (typeof apiService === 'undefined') {
+  console.error('apiService not found! Make sure api-service.js is loaded correctly.');
+}
+
 // Listen for messages from popup or content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getStoredData') {

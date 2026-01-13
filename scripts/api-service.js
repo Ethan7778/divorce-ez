@@ -361,8 +361,13 @@ class ApiService {
   }
 }
 
-// Export singleton instance
+// Export singleton instance - make it globally available for service worker
 const apiService = new ApiService()
+// Make it globally available for importScripts
+if (typeof self !== 'undefined') {
+  self.apiService = apiService
+}
+// Also support CommonJS if needed
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = apiService
 }
