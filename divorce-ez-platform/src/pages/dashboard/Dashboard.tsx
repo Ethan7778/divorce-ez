@@ -30,6 +30,12 @@ export default function Dashboard() {
     }
   }, [user])
 
+  // Debug: Log version to console to verify deployment
+  useEffect(() => {
+    console.log('🎨 UI Version: Canvas Redesign v2.0.1')
+    console.log('📅 Deployed:', new Date().toISOString())
+  }, [])
+
   const fetchDocuments = async () => {
     if (!user) return
     setDocumentsLoading(true)
