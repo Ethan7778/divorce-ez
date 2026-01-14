@@ -152,7 +152,9 @@ class ApiService {
         if (formDataArray && formDataArray.length > 0) {
           return {
             personal_info: formDataArray[0].personal_info || {},
-            financial_info: formDataArray[0].financial_info || {}
+            financial_info: formDataArray[0].financial_info || {},
+            marriage_info: formDataArray[0].marriage_info || {},
+            court_info: formDataArray[0].court_info || {}
           }
         }
       }
@@ -245,14 +247,18 @@ class ApiService {
 
         return {
           personal_info: personalInfo,
-          financial_info: financialInfo
+          financial_info: financialInfo,
+          marriage_info: {},
+          court_info: {}
         }
       }
 
       // Return empty if nothing found
       return {
         personal_info: {},
-        financial_info: {}
+        financial_info: {},
+        marriage_info: {},
+        court_info: {}
       }
     } catch (error) {
       console.error('Error fetching user data:', error)

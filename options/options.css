@@ -57,6 +57,24 @@ section h2 {
   padding: 20px;
 }
 
+.data-section-header {
+  margin-top: 20px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #667eea;
+}
+
+.data-section-header:first-child {
+  margin-top: 0;
+}
+
+.data-section-header h3 {
+  font-size: 18px;
+  color: #667eea;
+  font-weight: 600;
+  margin: 0;
+}
+
 .data-item {
   margin-bottom: 15px;
   padding-bottom: 15px;

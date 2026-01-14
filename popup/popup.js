@@ -65,11 +65,14 @@ function setupEventListeners() {
  * Check authentication status and update UI
  */
 async function checkAuthStatus() {
+  const notConnectedSection = document.getElementById('notConnectedSection');
+  const syncSection = document.getElementById('syncSection');
+  const actionsSection = document.getElementById('actionsSection');
   const connectionStatus = document.getElementById('connectionStatus');
   const statusIndicator = document.getElementById('statusIndicator');
   const connectionStatusText = document.getElementById('connectionStatusText');
-  const syncButton = document.getElementById('syncButton');
   const loginButton = document.getElementById('loginButton');
+  const syncButton = document.getElementById('syncButton');
 
   try {
     // Check if we have tokens stored
@@ -85,15 +88,16 @@ async function checkAuthStatus() {
     console.log('Auth check response:', response);
     
     if (response && response.success && response.isAuthenticated) {
-      // Connected
-      statusIndicator.className = 'status-indicator connected';
-      connectionStatusText.textContent = 'Connected to platform';
+      // Connected - show connected UI
+      if (notConnectedSection) notConnectedSection.style.display = 'none';
+      if (syncSection) syncSection.style.display = 'block';
+      if (actionsSection) actionsSection.style.display = 'block';
+      
+      if (statusIndicator) statusIndicator.className = 'status-indicator connected';
+      if (connectionStatusText) connectionStatusText.textContent = 'Connected to platform';
       if (syncButton) {
         syncButton.disabled = false;
         syncButton.style.cursor = 'pointer';
-      }
-      if (loginButton) {
-        loginButton.style.display = 'none';
       }
       
       // Update last sync time
@@ -105,31 +109,28 @@ async function checkAuthStatus() {
         if (lastSyncTime) lastSyncTime.textContent = new Date(lastSyncResponse.lastSyncTime).toLocaleString();
       }
     } else {
-      // Not connected
-      statusIndicator.className = 'status-indicator disconnected';
-      connectionStatusText.textContent = 'Not connected to platform';
-      if (syncButton) {
-        syncButton.disabled = true;
-        syncButton.style.cursor = 'not-allowed';
-      }
-      if (loginButton) {
-        loginButton.style.display = 'block';
-      }
+      // Not connected - show login UI only
+      if (notConnectedSection) notConnectedSection.style.display = 'block';
+      if (syncSection) syncSection.style.display = 'none';
+      if (actionsSection) actionsSection.style.display = 'none';
+      
+      if (statusIndicator) statusIndicator.className = 'status-indicator disconnected';
+      if (connectionStatusText) connectionStatusText.textContent = 'Not connected to platform';
+      if (loginButton) loginButton.style.display = 'block';
+      
       console.log('Not authenticated. Response:', response);
       console.log('To connect: Click "Connect to Platform" button and log in');
     }
   } catch (error) {
     console.error('Error checking auth status:', error);
-    // On error, assume not connected but don't show error state
-    statusIndicator.className = 'status-indicator disconnected';
-    connectionStatusText.textContent = 'Not connected to platform';
-    if (syncButton) {
-      syncButton.disabled = true;
-      syncButton.style.cursor = 'not-allowed';
-    }
-    if (loginButton) {
-      loginButton.style.display = 'block';
-    }
+    // On error, show not connected state
+    if (notConnectedSection) notConnectedSection.style.display = 'block';
+    if (syncSection) syncSection.style.display = 'none';
+    if (actionsSection) actionsSection.style.display = 'none';
+    
+    if (statusIndicator) statusIndicator.className = 'status-indicator disconnected';
+    if (connectionStatusText) connectionStatusText.textContent = 'Not connected to platform';
+    if (loginButton) loginButton.style.display = 'block';
   }
 }
 

@@ -202,6 +202,8 @@ function mapDataToField(fieldInfo, data) {
 
   const personalInfo = data.personal_info || {};
   const financialInfo = data.financial_info || {};
+  const marriageInfo = data.marriage_info || {};
+  const courtInfo = data.court_info || {};
 
   // Name fields
   if (searchText.match(/first\s*name|fname|given\s*name/i)) {
@@ -213,16 +215,53 @@ function mapDataToField(fieldInfo, data) {
   if (searchText.match(/middle\s*name|mname/i)) {
     return personalInfo.middleName || null;
   }
-  if (searchText.match(/full\s*name|name/i) && !searchText.match(/first|last|middle/)) {
+  if (searchText.match(/full\s*name|name/i) && !searchText.match(/first|last|middle|spouse/)) {
     const fullName = [personalInfo.firstName, personalInfo.middleName, personalInfo.lastName]
       .filter(Boolean)
       .join(' ');
     return fullName || null;
   }
 
+  // Spouse name
+  if (searchText.match(/spouse|spouse's|spouse\s+name|partner/i)) {
+    return personalInfo.spouseName || marriageInfo.legalNamesAtMarriage?.spouse2 || null;
+  }
+
   // Date of birth
   if (searchText.match(/date\s*of\s*birth|dob|birth\s*date|birthday/i)) {
     return personalInfo.dateOfBirth || null;
+  }
+
+  // Dependents/children
+  if (searchText.match(/dependent|child|children|minor/i)) {
+    const dependents = personalInfo.dependents || [];
+    if (dependents.length > 0) {
+      // Return count or names depending on field type
+      if (type === 'number' || searchText.match(/count|number|how\s*many/)) {
+        return dependents.length;
+      }
+      // Return names as comma-separated list
+      return dependents.map(d => d.name).filter(Boolean).join(', ') || null;
+    }
+    return null;
+  }
+
+  // Child name (specific child)
+  if (searchText.match(/child\s+name|dependent\s+name/i)) {
+    const dependents = personalInfo.dependents || [];
+    if (dependents.length > 0) {
+      return dependents[0].name || null;
+    }
+    return null;
+  }
+
+  // Child date of birth
+  if (searchText.match(/child\s+dob|child\s+date\s+of\s+birth|dependent\s+dob/i)) {
+    const dependents = personalInfo.dependents || [];
+    if (dependents.length > 0) {
+      return dependents[0].dateOfBirth || null;
+    }
+    return null;
   }
 
   // Address fields
@@ -232,7 +271,7 @@ function mapDataToField(fieldInfo, data) {
   if (searchText.match(/city/i)) {
     return personalInfo.address?.city || null;
   }
-  if (searchText.match(/state/i) && !searchText.match(/license|drivers/)) {
+  if (searchText.match(/state/i) && !searchText.match(/license|drivers|marriage/)) {
     return personalInfo.address?.state || null;
   }
   if (searchText.match(/zip|postal\s*code/i)) {
@@ -254,9 +293,9 @@ function mapDataToField(fieldInfo, data) {
     return personalInfo.email || null;
   }
 
-  // SSN
+  // SSN (use last 4 if available)
   if (searchText.match(/ssn|social\s*security|social\s*sec/i)) {
-    return personalInfo.ssn || null;
+    return personalInfo.ssnLast4 || personalInfo.ssn || null;
   }
 
   // License number
@@ -267,26 +306,94 @@ function mapDataToField(fieldInfo, data) {
     return personalInfo.driverLicenseState || null;
   }
 
-  // Income fields
+  // Marriage date
+  if (searchText.match(/marriage\s+date|date\s+of\s+marriage|married\s+date/i)) {
+    return personalInfo.marriageDate || marriageInfo.marriageDate || null;
+  }
+
+  // Marriage place
+  if (searchText.match(/marriage\s+place|place\s+of\s+marriage|married\s+at/i)) {
+    return personalInfo.marriagePlace || marriageInfo.marriagePlace || null;
+  }
+
+  // Filing status
+  if (searchText.match(/filing\s+status|tax\s+status/i)) {
+    return personalInfo.filingStatus || null;
+  }
+
+  // Income fields - detailed breakdown
   if (searchText.match(/monthly\s*income|income\s*per\s*month/i)) {
     return financialInfo.income?.monthly || null;
   }
   if (searchText.match(/annual\s*income|yearly\s*income|income\s*per\s*year/i)) {
     return financialInfo.income?.annual || null;
   }
-  if (searchText.match(/income|wages|salary|gross\s*pay/i)) {
+  if (searchText.match(/wage\s*income|wages|salary/i)) {
+    return financialInfo.income?.wage || null;
+  }
+  if (searchText.match(/self[\s-]?employment|business\s+income|self\s+employed/i)) {
+    return financialInfo.income?.selfEmployment || null;
+  }
+  if (searchText.match(/investment\s+income|interest\s+income|dividend/i)) {
+    return financialInfo.income?.investment || null;
+  }
+  if (searchText.match(/rental\s+income|rental/i)) {
+    return financialInfo.income?.rental || null;
+  }
+  if (searchText.match(/income|gross\s*pay/i) && !searchText.match(/monthly|annual|wage|self|investment|rental/)) {
     return financialInfo.income?.annual || financialInfo.income?.monthly || null;
   }
 
+  // Employer
+  if (searchText.match(/employer|company\s+name|work\s+for/i)) {
+    const employers = financialInfo.employers || [];
+    if (employers.length > 0) {
+      return employers[0].name || null;
+    }
+    return null;
+  }
+
+  // Expenses
+  if (searchText.match(/housing|rent|mortgage/i)) {
+    return financialInfo.expenses?.housing || null;
+  }
+  if (searchText.match(/utilities|utility/i)) {
+    return financialInfo.expenses?.utilities || null;
+  }
+  if (searchText.match(/childcare|daycare|child\s+care/i)) {
+    return financialInfo.expenses?.childcare || null;
+  }
+  if (searchText.match(/debt\s+payment|debt|loan\s+payment/i)) {
+    return financialInfo.expenses?.debt || null;
+  }
+  if (searchText.match(/transportation|car\s+payment|gas|vehicle/i)) {
+    return financialInfo.expenses?.transportation || null;
+  }
+
+  // Insurance
+  if (searchText.match(/health\s+insurance|medical\s+insurance|insurance\s+premium/i)) {
+    return financialInfo.insurance?.health || financialInfo.insurance?.premiums || null;
+  }
+
+  // Overtime
+  if (searchText.match(/overtime|ot/i)) {
+    return financialInfo.overtime || null;
+  }
+
+  // Bonuses
+  if (searchText.match(/bonus|bonuses/i)) {
+    return financialInfo.bonuses || null;
+  }
+
   // Assets
-  if (searchText.match(/assets?|asset\s*value/i)) {
+  if (searchText.match(/assets?|asset\s+value/i)) {
     const assets = financialInfo.assets || [];
     const total = assets.reduce((sum, asset) => sum + (asset.value || 0), 0);
     return total > 0 ? total : null;
   }
 
   // Debts
-  if (searchText.match(/debts?|liabilities?|debt\s*amount/i)) {
+  if (searchText.match(/debts?|liabilities?|debt\s+amount/i)) {
     const debts = financialInfo.debts || [];
     const total = debts.reduce((sum, debt) => sum + (debt.amount || 0), 0);
     return total > 0 ? total : null;

@@ -153,11 +153,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const supabaseKey = await getSupabaseAnonKey()
       
-      // Get redirect URL
+      // Get redirect URL - must be the extension's login page
+      // Supabase needs this in the allowed redirect URLs
       const redirectUrl = chrome.runtime.getURL('popup/login.html')
+      console.log('OAuth redirect URL:', redirectUrl)
       
-      // Build OAuth URL
+      // Build OAuth URL with proper query parameters
       const authUrl = `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}&apikey=${supabaseKey}`
+      console.log('OAuth URL:', authUrl.substring(0, 200) + '...')
       
       // Open OAuth popup
       chrome.identity.launchWebAuthFlow({

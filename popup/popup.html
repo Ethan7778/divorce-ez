@@ -13,17 +13,28 @@
       <p class="subtitle">Utah Divorce Filing Assistant</p>
     </header>
 
-    <div class="sync-section" id="syncSection">
-      <h2>Sync from Platform</h2>
-      <p class="help-text">Documents are uploaded on the web platform. Sync your data here to use it for auto-filling forms.</p>
-      
+    <!-- Not Connected State -->
+    <div class="not-connected-section" id="notConnectedSection">
       <div class="connection-status" id="connectionStatus">
         <div class="status-indicator" id="statusIndicator"></div>
         <span id="connectionStatusText">Checking connection...</span>
       </div>
+      <p class="help-text">Connect your account to sync data from the web platform and use auto-fill features.</p>
+      <button class="action-button primary" id="loginButton">Connect to Platform</button>
+    </div>
+
+    <!-- Connected State (hidden until connected) -->
+    <div class="sync-section" id="syncSection" style="display: none;">
+      <h2>Sync from Platform</h2>
+      <p class="help-text">Documents are uploaded on the web platform. Sync your data here to use it for auto-filling forms.</p>
+      
+      <div class="connection-status" id="connectedStatus">
+        <div class="status-indicator connected" id="connectedIndicator"></div>
+        <span id="connectedStatusText">Connected to platform</span>
+      </div>
 
       <div class="sync-controls">
-        <button class="sync-button primary" id="syncButton" disabled>Sync Now</button>
+        <button class="sync-button primary" id="syncButton">Sync Now</button>
         <a href="https://divorce-huw6ts83v-ethans-projects-a966bcc9.vercel.app" target="_blank" class="platform-link">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
@@ -59,8 +70,8 @@
       </div>
     </div>
 
-    <div class="actions">
-      <button class="action-button secondary" id="loginButton">Connect to Platform</button>
+    <!-- Actions (only shown when connected) -->
+    <div class="actions" id="actionsSection" style="display: none;">
       <button class="action-button secondary" id="viewDataButton">View Stored Data</button>
       <button class="action-button secondary" id="optionsButton">Options</button>
     </div>
