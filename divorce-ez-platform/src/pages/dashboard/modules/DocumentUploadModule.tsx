@@ -10,10 +10,7 @@ export default function DocumentUploadModule({ onComplete }: DocumentUploadModul
 
   return (
     <div>
-      <h2 className="text-2xl font-semibold text-gray-900 mb-1">Document Upload</h2>
-      <p className="text-sm text-gray-600 mb-6">
-        Upload your financial documents and identification here. Documents will be processed using browser OCR.
-      </p>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Document Upload</h1>
       <DocumentUpload />
       <div className="mt-6">
         <button
@@ -21,7 +18,7 @@ export default function DocumentUploadModule({ onComplete }: DocumentUploadModul
             await updateModule('module_document_upload', true)
             onComplete?.()
           }}
-          className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700"
+          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700"
         >
           Mark as Complete
         </button>

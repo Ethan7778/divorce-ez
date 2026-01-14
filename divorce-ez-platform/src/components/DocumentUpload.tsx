@@ -416,9 +416,9 @@ export default function DocumentUpload() {
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded">
+    <div className="bg-white border border-gray-300 rounded">
       {/* Canvas-style Section Header */}
-      <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+      <div className="border-b border-gray-300 bg-gray-50 px-4 py-3">
         <h3 className="text-base font-semibold text-gray-900">Document Upload</h3>
       </div>
 
@@ -438,27 +438,30 @@ export default function DocumentUpload() {
         {/* Canvas-style Document Type List */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-2">Select Document Type</label>
-          <div className="space-y-1 border border-gray-200 rounded">
-            {documentTypes.map((type) => (
+          <div className="border border-gray-300 rounded">
+            {documentTypes.sort((a, b) => (a.priority || 99) - (b.priority || 99)).map((type, idx) => (
               <div
                 key={type.value}
                 onClick={() => setSelectedDocType(type.value)}
-                className={`flex items-center px-3 py-2.5 cursor-pointer hover:bg-gray-50 ${
+                className={`flex items-center px-4 py-3 cursor-pointer hover:bg-gray-50 ${
                   selectedDocType === type.value ? 'bg-blue-50 border-l-4 border-blue-600' : ''
-                } ${type.value !== documentTypes[0].value ? 'border-t border-gray-200' : ''}`}
+                } ${idx > 0 ? 'border-t border-gray-300' : ''}`}
               >
-                <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center mr-3">
+                <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center mr-3">
                   {getDocumentIcon(type.value)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center">
+                  <div className="flex items-center flex-wrap gap-2">
                     <span className={`text-sm ${selectedDocType === type.value ? 'font-medium text-gray-900' : 'text-gray-700'}`}>
-                      {type.label}
+                      {type.label.replace(' - Anchor Document', '')}
                     </span>
                     {type.priority === 1 && (
-                      <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">
+                      <span className="px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">
                         Anchor
                       </span>
+                    )}
+                    {type.priority === 2 && type.value === 'payStub' && (
+                      <span className="text-xs text-gray-500">Required</span>
                     )}
                   </div>
                 </div>
@@ -475,7 +478,7 @@ export default function DocumentUpload() {
         {/* Canvas-style File Upload Section */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-2">File Upload</label>
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-gray-400 transition-colors">
+          <div className="border-2 border-dashed border-gray-300 rounded p-6 hover:border-gray-400 transition-colors">
             <div className="text-center">
               <svg
                 className="mx-auto h-12 w-12 text-gray-400 mb-4"
