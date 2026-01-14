@@ -56,7 +56,7 @@ export default function Dashboard() {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
               <h1 className="text-xl font-semibold text-gray-900">Divorce EZ</h1>
-              <span className="ml-3 text-xs text-gray-500">v2.0.0</span>
+              <span className="ml-3 text-xs text-gray-500">v2.0.1</span>
             </div>
             <div className="flex items-center space-x-4">
               <div className="text-sm text-gray-600">
