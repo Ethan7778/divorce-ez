@@ -10,12 +10,28 @@ import type { Document, DocumentType, PersonalInfo, FinancialInfo, MarriageInfo,
  */
 async function updateFormData(userId: string, extractedData: Record<string, any>, documentType?: string) {
   try {
+    console.log('📊 updateFormData called with:', {
+      userId,
+      documentType,
+      extractedDataKeys: Object.keys(extractedData || {}),
+      extractedDataSample: Object.keys(extractedData || {}).slice(0, 10).reduce((acc, key) => {
+        acc[key] = extractedData[key]
+        return acc
+      }, {} as Record<string, any>)
+    })
+    
     // Get existing form_data
     const { data: existingFormData, error: fetchError } = await supabase
       .from('form_data')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle()
+
+    if (fetchError) {
+      console.error('❌ Error fetching existing form_data:', fetchError)
+    } else {
+      console.log('📋 Existing form_data:', existingFormData ? 'Found' : 'Not found')
+    }
 
     // Helper to get value with fallbacks
     const getValue = (obj: Record<string, any>, ...keys: string[]) => {
@@ -233,27 +249,53 @@ async function updateFormData(userId: string, extractedData: Record<string, any>
       courtInfo.hasDomesticViolence = extractedData.hasDomesticViolence
     }
 
-    // Upsert form_data
-    const { error: upsertError } = await supabase
+    // Log what we're about to save
+    console.log('💾 Preparing to save form_data:')
+    console.log('Personal Info:', personalInfo)
+    console.log('Financial Info:', financialInfo)
+    console.log('Marriage Info:', marriageInfo)
+    console.log('Court Info:', courtInfo)
+
+    // Upsert form_data - ensure all fields are properly structured
+    const formDataToSave = {
+      user_id: userId,
+      personal_info: personalInfo || {},
+      financial_info: financialInfo || {},
+      marriage_info: marriageInfo || {},
+      court_info: courtInfo || {},
+      last_updated: new Date().toISOString(),
+    }
+
+    console.log('💾 Attempting to save form_data:', {
+      hasPersonalInfo: Object.keys(personalInfo).length > 0,
+      hasFinancialInfo: Object.keys(financialInfo).length > 0,
+      hasMarriageInfo: Object.keys(marriageInfo).length > 0,
+      hasCourtInfo: Object.keys(courtInfo).length > 0,
+    })
+
+    const { data: savedFormData, error: upsertError } = await supabase
       .from('form_data')
-      .upsert(
-        {
-          user_id: userId,
-          personal_info: personalInfo,
-          financial_info: financialInfo,
-          marriage_info: marriageInfo,
-          court_info: courtInfo,
-          last_updated: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' }
-      )
+      .upsert(formDataToSave, { onConflict: 'user_id' })
+      .select()
+      .single()
 
     if (upsertError) {
-      console.error('Failed to update form_data:', upsertError)
-      // Don't throw - this is optional aggregation
+      console.error('❌ Failed to update form_data:', upsertError)
+      console.error('Error code:', upsertError.code)
+      console.error('Error message:', upsertError.message)
+      console.error('Error details:', upsertError.details)
+      console.error('Error hint:', upsertError.hint)
+      // Don't throw - this is optional aggregation, but log the error
+    } else {
+      console.log('✅ Form_data saved successfully:', savedFormData?.id)
+      console.log('Saved personal_info keys:', Object.keys(savedFormData?.personal_info || {}))
+      console.log('Saved financial_info keys:', Object.keys(savedFormData?.financial_info || {}))
+      console.log('Saved marriage_info keys:', Object.keys(savedFormData?.marriage_info || {}))
+      console.log('Saved court_info keys:', Object.keys(savedFormData?.court_info || {}))
     }
   } catch (error) {
-    console.error('Error updating form_data:', error)
+    console.error('❌ Error updating form_data:', error)
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace')
     // Don't throw - this is optional aggregation
   }
 }
@@ -310,6 +352,15 @@ export default function DocumentUpload() {
         throw new Error(processed.error || 'Failed to process document')
       }
 
+      // Debug: Log extracted data
+      console.log('📄 Document Processing Results:')
+      console.log('Document Type:', selectedDocType)
+      console.log('Raw OCR Text Length:', processed.rawText?.length || 0)
+      console.log('Raw OCR Text (first 500 chars):', processed.rawText?.substring(0, 500) || 'No text extracted')
+      console.log('Extracted Data:', processed.extractedData)
+      console.log('Extracted Data Keys:', Object.keys(processed.extractedData || {}))
+      console.log('Number of extracted fields:', Object.keys(processed.extractedData || {}).length)
+
       setProgress(90)
       setProcessing(false)
       setUploading(true)
@@ -342,17 +393,25 @@ export default function DocumentUpload() {
       }
 
       // Step 4: Store extracted data
-      const { error: dataError } = await supabase.from('extracted_data').insert({
+      console.log('💾 Saving extracted data to database...')
+      console.log('Data being saved:', JSON.stringify(processed.extractedData, null, 2))
+      
+      const { data: savedExtractedData, error: dataError } = await supabase.from('extracted_data').insert({
         document_id: documentData.id,
         data: processed.extractedData,
-      })
+      }).select().single()
 
       if (dataError) {
+        console.error('❌ Failed to save extracted data:', dataError)
         throw new Error(`Failed to save extracted data: ${dataError.message}`)
       }
+      
+      console.log('✅ Extracted data saved successfully:', savedExtractedData?.id)
 
       // Step 5: Update form_data table with aggregated data
+      console.log('🔄 Updating form_data table...')
       await updateFormData(user.id, processed.extractedData, selectedDocType)
+      console.log('✅ Form data update completed')
 
       setProgress(100)
       setSuccess('Document processed and uploaded successfully!')

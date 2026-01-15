@@ -33,20 +33,45 @@ export async function extractTextFromImage(
   onProgress?: (progress: number) => void
 ): Promise<OCRResult> {
   try {
+    console.log('🖼️ Starting OCR for image file:', file.name, 'Size:', file.size)
     const { data } = await Tesseract.recognize(file, 'eng', {
       logger: (m) => {
         if (onProgress && m.status === 'recognizing text') {
           onProgress(m.progress)
         }
+        // Log OCR progress for debugging
+        if (m.status === 'recognizing text') {
+          console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`)
+        }
       },
     })
+
+    console.log('✅ OCR completed:', {
+      textLength: data.text.length,
+      confidence: data.confidence,
+      textPreview: data.text.substring(0, 200)
+    })
+
+    if (!data.text || data.text.trim().length === 0) {
+      console.warn('⚠️ OCR returned empty text')
+      return {
+        success: false,
+        text: '',
+        error: 'OCR returned no text. The image may be too blurry or contain no readable text.',
+      }
+    }
 
     return {
       success: true,
       text: data.text,
     }
   } catch (error: any) {
-    console.error('OCR Error:', error)
+    console.error('❌ OCR Error:', error)
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    })
     return {
       success: false,
       text: '',
@@ -63,11 +88,13 @@ export async function extractTextFromPDF(
   onProgress?: (progress: number) => void
 ): Promise<OCRResult> {
   try {
+    console.log('📄 Starting PDF text extraction:', file.name)
     const arrayBuffer = await file.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
     let fullText = ''
 
     const totalPages = pdf.numPages
+    console.log(`📄 PDF has ${totalPages} page(s)`)
 
     for (let i = 1; i <= totalPages; i++) {
       const page = await pdf.getPage(i)
@@ -79,11 +106,18 @@ export async function extractTextFromPDF(
       if (onProgress) {
         onProgress(i / totalPages)
       }
+      
+      console.log(`Page ${i}/${totalPages} extracted: ${pageText.length} characters`)
     }
+
+    console.log('✅ PDF text extraction complete:', {
+      totalLength: fullText.length,
+      textPreview: fullText.substring(0, 200)
+    })
 
     // If PDF has no extractable text, fall back to OCR
     if (fullText.trim().length < 10) {
-      console.log('PDF has no extractable text, falling back to OCR')
+      console.warn('⚠️ PDF has no extractable text (only ' + fullText.trim().length + ' chars), falling back to OCR')
       return await extractTextFromImage(file, onProgress)
     }
 
@@ -92,7 +126,13 @@ export async function extractTextFromPDF(
       text: fullText,
     }
   } catch (error: any) {
-    console.error('PDF extraction error:', error)
+    console.error('❌ PDF extraction error:', error)
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    })
+    console.log('🔄 Falling back to OCR for PDF...')
     // Fallback to OCR if PDF extraction fails
     return await extractTextFromImage(file, onProgress)
   }
@@ -124,27 +164,58 @@ export async function extractTextFromFile(
 export function parseDocumentText(text: string, documentType: string): Record<string, any> {
   const extractedData: Record<string, any> = { rawText: text }
 
+  if (!text || text.trim().length === 0) {
+    console.warn('⚠️ Empty text provided to parseDocumentText')
+    return extractedData
+  }
+
+  console.log(`📝 Parsing ${documentType} document, text length: ${text.length}`)
+
+  let parsedData: Record<string, any>
+  
   switch (documentType) {
     case 'driversLicense':
-      return parseDriversLicense(text)
+      parsedData = parseDriversLicense(text)
+      break
     case 'taxReturn':
-      return parseTaxReturn(text)
+      parsedData = parseTaxReturn(text)
+      break
     case 'payStub':
-      return parsePayStub(text)
+      parsedData = parsePayStub(text)
+      break
     case 'bankStatement':
-      return parseBankStatement(text)
+      parsedData = parseBankStatement(text)
+      break
     case 'w2':
     case '1099':
-      return parseW2Or1099(text)
+      parsedData = parseW2Or1099(text)
+      break
     case 'marriageCertificate':
-      return parseMarriageCertificate(text)
+      parsedData = parseMarriageCertificate(text)
+      break
     case 'priorCourtOrder':
-      return parsePriorCourtOrder(text)
+      parsedData = parsePriorCourtOrder(text)
+      break
     case 'profitAndLoss':
-      return parseProfitAndLoss(text)
+      parsedData = parseProfitAndLoss(text)
+      break
     default:
-      return extractedData
+      console.warn(`⚠️ Unknown document type: ${documentType}, returning raw text only`)
+      parsedData = extractedData
   }
+
+  // Merge rawText into parsed data
+  parsedData.rawText = text
+
+  // Log parsing results
+  const extractedKeys = Object.keys(parsedData).filter(k => k !== 'rawText')
+  console.log(`✅ Parsed ${documentType}:`, {
+    extractedFields: extractedKeys.length,
+    fields: extractedKeys,
+    hasData: extractedKeys.length > 0
+  })
+
+  return parsedData
 }
 
 /**
@@ -790,6 +861,13 @@ export async function processDocument(
   onProgress?: (progress: number) => void
 ): Promise<ProcessedDocument> {
   try {
+    console.log('🔍 Starting document processing:', {
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+      documentType
+    })
+
     // Extract text
     const ocrResult = await extractTextFromFile(file, (progress) => {
       if (onProgress) {
@@ -798,6 +876,7 @@ export async function processDocument(
     })
 
     if (!ocrResult.success) {
+      console.error('❌ OCR extraction failed:', ocrResult.error)
       return {
         success: false,
         documentType,
@@ -807,12 +886,30 @@ export async function processDocument(
       }
     }
 
+    console.log('✅ OCR extraction successful:', {
+      textLength: ocrResult.text.length,
+      textPreview: ocrResult.text.substring(0, 200) + '...'
+    })
+
     // Parse text
     if (onProgress) {
       onProgress(0.9)
     }
 
+    console.log('📝 Parsing document text for type:', documentType)
     const extractedData = parseDocumentText(ocrResult.text, documentType)
+    
+    console.log('✅ Parsing complete:', {
+      extractedKeys: Object.keys(extractedData),
+      extractedKeyCount: Object.keys(extractedData).length,
+      hasData: Object.keys(extractedData).length > 1, // More than just rawText
+      sampleData: Object.keys(extractedData).slice(0, 5).reduce((acc, key) => {
+        if (key !== 'rawText') {
+          acc[key] = extractedData[key]
+        }
+        return acc
+      }, {} as Record<string, any>)
+    })
 
     if (onProgress) {
       onProgress(1.0)
@@ -825,7 +922,12 @@ export async function processDocument(
       rawText: ocrResult.text,
     }
   } catch (error: any) {
-    console.error('Document processing error:', error)
+    console.error('❌ Document processing error:', error)
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    })
     return {
       success: false,
       documentType,
