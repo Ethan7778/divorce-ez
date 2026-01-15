@@ -66,24 +66,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signInWithOAuth = async (provider: 'google' | 'github' | 'facebook') => {
     setLoading(true)
-    // ALWAYS use production URL for OAuth redirects
+    // Use current origin for redirect - this ensures we always redirect to the current deployment
     // Supabase will validate this against allowed redirect URLs in dashboard
-    const productionUrl = 'https://divorce-huw6ts83v-ethans-projects-a966bcc9.vercel.app'
     const currentOrigin = window.location.origin
     const isDevelopment = currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1')
     
-    // In development, allow localhost. In production, ALWAYS use production URL
-    // This ensures Supabase redirects correctly
+    // Use environment variable if set, otherwise use current origin
+    // This works for both development and production
     let redirectUrl: string
-    if (isDevelopment && import.meta.env.VITE_SITE_URL) {
-      // Development with custom URL
+    if (import.meta.env.VITE_SITE_URL) {
+      // Use environment variable if configured
       redirectUrl = import.meta.env.VITE_SITE_URL
-    } else if (isDevelopment) {
-      // Development - use localhost
-      redirectUrl = currentOrigin
     } else {
-      // Production - ALWAYS use production URL, never localhost
-      redirectUrl = productionUrl
+      // Use current origin (works for both dev and production)
+      redirectUrl = currentOrigin
     }
     
     const fullRedirectUrl = `${redirectUrl}/dashboard`
