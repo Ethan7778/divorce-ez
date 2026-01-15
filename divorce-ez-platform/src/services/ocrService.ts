@@ -5,9 +5,10 @@
 import Tesseract from 'tesseract.js'
 import * as pdfjsLib from 'pdfjs-dist'
 
-// Configure PDF.js worker
+// Configure PDF.js worker - use unpkg CDN which is more reliable
 if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+  // Use unpkg CDN which typically has better availability
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
 }
 
 export interface OCRResult {
