@@ -263,27 +263,34 @@ function parseDriversLicense(text: string): Record<string, any> {
 function parseTaxReturn(text: string): Record<string, any> {
   const data: Record<string, any> = {}
 
-  // Extract primary taxpayer name (Form 1040 line 1 area)
-  const primaryNameMatch = text.match(/(?:YOUR\s+FIRST\s+NAME|FIRST\s+NAME\s+AND\s+MIDDLE\s+INITIAL)[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i)
-  if (primaryNameMatch) {
-    const nameParts = primaryNameMatch[1].trim().split(/\s+/)
+  // Extract primary taxpayer name - look for actual name fields, not labels
+  // Form 1040 has: "Your first name and middle initial" followed by "Last name"
+  const nameSectionMatch = text.match(/Your first name and middle initial[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z\.]+)*)\s+Last name[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i)
+  if (nameSectionMatch) {
+    const firstMiddle = nameSectionMatch[1].trim()
+    const nameParts = firstMiddle.split(/\s+/)
     data.firstName = nameParts[0]
     if (nameParts.length > 1) {
-      data.middleName = nameParts.slice(1, -1).join(' ')
-      data.lastName = nameParts[nameParts.length - 1]
-    } else {
-      data.lastName = nameParts[0]
+      data.middleName = nameParts.slice(1).join(' ')
+    }
+    data.lastName = nameSectionMatch[2].trim()
+  } else {
+    // Fallback: look for SSN pattern followed by name-like text
+    const ssnNameMatch = text.match(/(\d{3}[-.\s]?\d{2}[-.\s]?\d{4})[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i)
+    if (ssnNameMatch) {
+      const nameParts = ssnNameMatch[2].trim().split(/\s+/)
+      if (nameParts.length >= 2) {
+        data.firstName = nameParts[0]
+        data.lastName = nameParts[nameParts.length - 1]
+        if (nameParts.length > 2) {
+          data.middleName = nameParts.slice(1, -1).join(' ')
+        }
+      }
     }
   }
 
-  // Extract last name separately (Form 1040)
-  const lastNameMatch = text.match(/(?:LAST\s+NAME)[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i)
-  if (lastNameMatch && !data.lastName) {
-    data.lastName = lastNameMatch[1].trim()
-  }
-
   // Extract SSN (full, we'll store only last 4)
-  const ssnMatch = text.match(/(?:SSN|SOCIAL\s+SECURITY\s+NUMBER)[\s:]*(\d{3}[-.\s]?\d{2}[-.\s]?\d{4})/i)
+  const ssnMatch = text.match(/(?:Your social security number|SSN)[\s:]*(\d{3}[-.\s]?\d{2}[-.\s]?\d{4})/i)
   if (ssnMatch) {
     const ssn = ssnMatch[1].replace(/[-.\s]/g, '')
     if (ssn.length === 9) {
@@ -292,67 +299,53 @@ function parseTaxReturn(text: string): Record<string, any> {
     }
   }
 
-  // Extract filing status
-  const filingStatusMatch = text.match(/(?:FILING\s+STATUS|Filing\s+Status)[\s:]*(\d|Single|Married\s+filing\s+jointly|Married\s+filing\s+separately|Head\s+of\s+household)/i)
-  if (filingStatusMatch) {
-    const status = filingStatusMatch[1].toLowerCase()
-    if (status.includes('single') || status === '1') {
-      data.filingStatus = 'single'
-    } else if (status.includes('joint') || status === '2') {
-      data.filingStatus = 'married_joint'
-    } else if (status.includes('separate') || status === '3') {
-      data.filingStatus = 'married_separate'
-    } else if (status.includes('head') || status === '4') {
-      data.filingStatus = 'head_of_household'
-    }
+  // Extract filing status - look for checked boxes, not just text
+  if (text.match(/Single[\s✓X]*✓|Single[\s✓X]*X|Single[\s✓X]*☑/i) || 
+      text.match(/Filing Status[\s:]*Single/i)) {
+    data.filingStatus = 'single'
+  } else if (text.match(/Married filing jointly[\s✓X]*✓|Married filing jointly[\s✓X]*X|Married filing jointly[\s✓X]*☑/i)) {
+    data.filingStatus = 'married_joint'
+  } else if (text.match(/Married filing separately[\s✓X]*✓|Married filing separately[\s✓X]*X|Married filing separately[\s✓X]*☑/i)) {
+    data.filingStatus = 'married_separate'
+  } else if (text.match(/Head of household[\s✓X]*✓|Head of household[\s✓X]*X|Head of household[\s✓X]*☑/i)) {
+    data.filingStatus = 'head_of_household'
   }
 
-  // Extract address (Form 1040)
-  const addressMatch = text.match(/(?:HOME\s+ADDRESS|STREET\s+ADDRESS)[\s:]*([0-9]+\s+[A-Z0-9\s,#\-]+)/i)
+  // Extract address - look for actual address pattern after "Home address"
+  const addressMatch = text.match(/Home address[\s(]*\(number and street\)[\s:]*([0-9]+\s+[A-Z0-9\s,#\-\.]+?)(?:\s+Apt\.?\s+no\.?|City|State|ZIP)/i)
   if (addressMatch) {
-    const addressParts = addressMatch[1].trim().split(/\s*,\s*/)
-    data.address = { street: addressParts[0] }
-    if (addressParts.length > 1) {
-      data.address.city = addressParts[1]
-    }
+    data.address = { street: addressMatch[1].trim() }
   }
 
-  // Extract city
-  const cityMatch = text.match(/(?:CITY\s+OR\s+TOWN|CITY)[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i)
-  if (cityMatch && (!data.address || !data.address.city)) {
+  // Extract city - look after "City, town, or post office"
+  const cityMatch = text.match(/City, town, or post office[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i)
+  if (cityMatch) {
     if (!data.address) data.address = {}
     data.address.city = cityMatch[1].trim()
   }
 
-  // Extract state
-  const stateMatch = text.match(/(?:STATE|ST\.?)[\s:]*([A-Z]{2})/i)
-  if (stateMatch && (!data.address || !data.address.state)) {
+  // Extract state - look for 2-letter state code after "State"
+  const stateMatch = text.match(/State[\s:]*([A-Z]{2})(?:\s+ZIP)/i)
+  if (stateMatch) {
     if (!data.address) data.address = {}
     data.address.state = stateMatch[1].trim()
   }
 
-  // Extract ZIP code
-  const zipMatch = text.match(/(?:ZIP\s+CODE|ZIP)[\s:]*(\d{5}(?:-\d{4})?)/i)
-  if (zipMatch && (!data.address || !data.address.zipCode)) {
+  // Extract ZIP code - look for 5 or 9 digit ZIP after "ZIP code"
+  const zipMatch = text.match(/ZIP code[\s:]*(\d{5}(?:-\d{4})?)/i)
+  if (zipMatch) {
     if (!data.address) data.address = {}
     data.address.zipCode = zipMatch[1].trim()
   }
 
-  // Extract spouse name (if joint filing)
-  const spouseNameMatch = text.match(/(?:SPOUSE'S\s+FIRST\s+NAME|SPOUSE\s+FIRST\s+NAME)[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i)
-  if (spouseNameMatch) {
-    const spouseFirst = spouseNameMatch[1].trim()
-    const spouseLastMatch = text.match(/(?:SPOUSE'S\s+LAST\s+NAME|SPOUSE\s+LAST\s+NAME)[\s:]*([A-Z][a-z]+)/i)
-    if (spouseLastMatch) {
-      data.spouseName = `${spouseFirst} ${spouseLastMatch[1].trim()}`
-    } else {
-      data.spouseName = spouseFirst
-    }
+  // Extract spouse name (if joint filing) - look for "If joint return, spouse's first name"
+  const spouseSectionMatch = text.match(/If joint return, spouse's first name and middle initial[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z\.]+)*)\s+Last name[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i)
+  if (spouseSectionMatch) {
+    data.spouseName = `${spouseSectionMatch[1].trim()} ${spouseSectionMatch[2].trim()}`
   }
 
   // Extract dependents (from dependent section or Schedule EIC)
   const dependents: Array<{ name: string; dateOfBirth: string }> = []
-  // Look for dependent names and DOBs
   const dependentPattern = /(?:DEPENDENT|CHILD)[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)[\s:]*DOB[:\s]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/gi
   let dependentMatch
   while ((dependentMatch = dependentPattern.exec(text)) !== null) {
@@ -365,60 +358,94 @@ function parseTaxReturn(text: string): Record<string, any> {
     data.dependents = dependents
   }
 
-  // Extract wage income (Form 1040 line 1, or W-2 box 1)
-  const wageMatch = text.match(/(?:WAGES|SALARIES|TIP|TAXABLE\s+WAGE|LINE\s+1)[\s:$]*\$?([\d,]+\.?\d*)/i)
-  if (wageMatch) {
-    data.wageIncome = parseFloat(wageMatch[1].replace(/,/g, ''))
-    data.annualIncome = (data.annualIncome || 0) + data.wageIncome
-  }
-
-  // Extract self-employment income (Schedule C or Form 1040 line 7)
-  const selfEmpMatch = text.match(/(?:BUSINESS\s+INCOME|SELF[\s-]?EMPLOYMENT|SCHEDULE\s+C|LINE\s+7)[\s:$]*\$?([\d,]+\.?\d*)/i)
-  if (selfEmpMatch) {
-    data.selfEmploymentIncome = parseFloat(selfEmpMatch[1].replace(/,/g, ''))
-    data.annualIncome = (data.annualIncome || 0) + data.selfEmploymentIncome
-  }
-
-  // Extract investment income (Schedule B/D or Form 1040 line 8a)
-  const interestMatch = text.match(/(?:TAXABLE\s+INTEREST|INTEREST\s+INCOME|LINE\s+8A)[\s:$]*\$?([\d,]+\.?\d*)/i)
-  if (interestMatch) {
-    data.investmentIncome = parseFloat(interestMatch[1].replace(/,/g, ''))
-    data.annualIncome = (data.annualIncome || 0) + data.investmentIncome
-  }
-
-  // Extract rental income (Schedule E or Form 1040 line 17)
-  const rentalMatch = text.match(/(?:RENTAL\s+INCOME|RENTAL|SCHEDULE\s+E|LINE\s+17)[\s:$]*\$?([\d,]+\.?\d*)/i)
-  if (rentalMatch) {
-    data.rentalIncome = parseFloat(rentalMatch[1].replace(/,/g, ''))
-    data.annualIncome = (data.annualIncome || 0) + data.rentalIncome
-  }
-
-  // Extract AGI (Adjusted Gross Income)
-  const agiMatch = text.match(/(?:ADJUSTED\s+GROSS\s+INCOME|AGI|LINE\s+11)[\s:$]*\$?([\d,]+\.?\d*)/i)
-  if (agiMatch) {
-    const agi = parseFloat(agiMatch[1].replace(/,/g, ''))
-    if (!data.annualIncome || agi > data.annualIncome) {
-      data.annualIncome = agi
+  // Extract wage income - Form 1040 Line 1: "Wages, salaries, tips, etc."
+  // Look for the actual dollar amount on line 1, not just any number after "Wages"
+  const line1Match = text.match(/1\s+Wages,?\s+salaries,?\s+tips,?\s+etc\.?\s+Attach Form\(s\) W-2[\s.]*\$?([\d,]+\.?\d*)/i)
+  if (line1Match) {
+    const wageAmount = parseFloat(line1Match[1].replace(/,/g, ''))
+    if (wageAmount > 0 && wageAmount < 10000000) { // Sanity check
+      data.wageIncome = wageAmount
+      data.annualIncome = wageAmount
     }
-    data.adjustedGrossIncome = agi
   }
 
-  // Extract total income
-  const totalIncomeMatch = text.match(/(?:TOTAL\s+INCOME|LINE\s+9)[\s:$]*\$?([\d,]+\.?\d*)/i)
-  if (totalIncomeMatch) {
-    data.totalIncome = parseFloat(totalIncomeMatch[1].replace(/,/g, ''))
+  // Extract total income - Form 1040 Line 9: "Add lines 1, 2b, 3b, 4b, 5b, 6b, 7, and 8. This is your total income"
+  const line9Match = text.match(/9\s+Add lines 1,?\s+2b,?\s+3b,?\s+4b,?\s+5b,?\s+6b,?\s+7,?\s+and 8\.?\s+This is your total income[\s.]*\$?([\d,]+\.?\d*)/i)
+  if (line9Match) {
+    const totalIncome = parseFloat(line9Match[1].replace(/,/g, ''))
+    if (totalIncome > 0 && totalIncome < 10000000) { // Sanity check
+      data.totalIncome = totalIncome
+      if (!data.annualIncome) {
+        data.annualIncome = totalIncome
+      }
+    }
   }
 
-  // Extract employer names from W-2s (embedded in tax return)
+  // Extract AGI - Form 1040 Line 11: "Subtract line 10 from line 9. This is your adjusted gross income"
+  const line11Match = text.match(/11\s+Subtract line 10 from line 9\.?\s+This is your adjusted gross income[\s.]*\$?([\d,]+\.?\d*)/i)
+  if (line11Match) {
+    const agi = parseFloat(line11Match[1].replace(/,/g, ''))
+    if (agi > 0 && agi < 10000000) { // Sanity check
+      data.adjustedGrossIncome = agi
+      if (!data.annualIncome || agi > data.annualIncome) {
+        data.annualIncome = agi
+      }
+    }
+  }
+
+  // Extract self-employment income - look for Schedule C or business income
+  const scheduleCMatch = text.match(/Schedule C[\s:]*Net profit or \(loss\)[\s:]*\$?([\d,]+\.?\d*)/i)
+  if (scheduleCMatch) {
+    const selfEmp = parseFloat(scheduleCMatch[1].replace(/,/g, ''))
+    if (selfEmp > 0 && selfEmp < 10000000) {
+      data.selfEmploymentIncome = selfEmp
+      data.annualIncome = (data.annualIncome || 0) + selfEmp
+    }
+  }
+
+  // Extract rental income - look for Schedule E
+  const scheduleEMatch = text.match(/Schedule E[\s:]*Total rental real estate and royalty income or \(loss\)[\s:]*\$?([\d,]+\.?\d*)/i)
+  if (scheduleEMatch) {
+    const rental = parseFloat(scheduleEMatch[1].replace(/,/g, ''))
+    if (rental > 0 && rental < 10000000) {
+      data.rentalIncome = rental
+      data.annualIncome = (data.annualIncome || 0) + rental
+    }
+  }
+
+  // Extract employer names from W-2 forms embedded in tax return
+  // W-2 forms have "Employer's name" followed by the actual name
   const employers: Array<{ name: string; income?: number }> = []
-  const employerPattern = /(?:EMPLOYER'S\s+NAME|EMPLOYER)[\s:]*([A-Z][A-Z\s,&]+)/gi
+  const w2EmployerPattern = /(?:Copy [ABCD]|W-2).*?Employer's name[\s:]*([A-Z][A-Z\s,&\.\-']{2,50}?)(?:\s+Employer's|Federal|State|Social)/gi
   let employerMatch
-  while ((employerMatch = employerPattern.exec(text)) !== null) {
+  while ((employerMatch = w2EmployerPattern.exec(text)) !== null) {
     const employerName = employerMatch[1].trim()
-    if (employerName && employerName.length > 2) {
+    // Filter out obvious non-employer names
+    if (employerName && 
+        employerName.length > 2 && 
+        employerName.length < 100 &&
+        !employerName.match(/^(ID|number|withheld|paid|Additional|Medicare|Tax|tier|contributions|contributed|Archer|MSAs|HSAs|Who|Provide|Vehicles|Use|Employees|Answer|questions|determine|meet|exception|completing|Section|vehicles|used|aren|WAGES|W)$/i)) {
       employers.push({ name: employerName })
     }
   }
+  
+  // If no W-2 employers found, try a simpler pattern but be more selective
+  if (employers.length === 0) {
+    const simpleEmployerPattern = /Employer's name[\s:]*([A-Z][A-Z\s,&\.\-']{3,50}?)(?:\s+[A-Z]{2,}|Federal|State|Social|EIN|Address)/gi
+    let simpleMatch
+    while ((simpleMatch = simpleEmployerPattern.exec(text)) !== null) {
+      const employerName = simpleMatch[1].trim()
+      // More aggressive filtering
+      if (employerName && 
+          employerName.length >= 3 && 
+          employerName.length <= 50 &&
+          !employerName.match(/^(ID|number|withheld|paid|Additional|Medicare|Tax|tier|contributions|contributed|Archer|MSAs|HSAs|Who|Provide|Vehicles|Use|Employees|Answer|questions|determine|meet|exception|completing|Section|vehicles|used|aren|WAGES|W|Form|Schedule|Line|IRS|Internal|Revenue|Service|Department|Treasury)$/i) &&
+          employerName.match(/^[A-Z][a-zA-Z\s,&\.\-']+$/)) {
+        employers.push({ name: employerName })
+      }
+    }
+  }
+  
   if (employers.length > 0) {
     data.employers = employers
   }

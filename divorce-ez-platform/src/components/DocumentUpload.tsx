@@ -366,13 +366,22 @@ export default function DocumentUpload() {
       setUploading(true)
 
       // Step 2: Upload file to Supabase Storage (optional - for reference)
-      const filePath = `${user.id}/${selectedDocType}/${Date.now()}_${selectedFile.name}`
-      const { error: uploadError } = await supabase.storage
-        .from('documents')
-        .upload(filePath, selectedFile)
+      let filePath: string | null = null
+      try {
+        filePath = `${user.id}/${selectedDocType}/${Date.now()}_${selectedFile.name}`
+        const { error: uploadError } = await supabase.storage
+          .from('documents')
+          .upload(filePath, selectedFile)
 
-      if (uploadError) {
-        console.warn('File upload failed, but continuing with data upload:', uploadError)
+        if (uploadError) {
+          console.warn('⚠️ File upload to storage failed (continuing with data upload):', uploadError.message)
+          filePath = null // Don't save file path if upload failed
+        } else {
+          console.log('✅ File uploaded to storage:', filePath)
+        }
+      } catch (storageError: any) {
+        console.warn('⚠️ Storage bucket not configured (continuing with data upload):', storageError?.message || 'Bucket not found')
+        filePath = null // Don't save file path if storage is not configured
       }
 
       // Step 3: Store extracted data in database
@@ -381,7 +390,7 @@ export default function DocumentUpload() {
         .insert({
           user_id: user.id,
           file_name: selectedFile.name,
-          file_path: uploadError ? null : filePath,
+          file_path: filePath,
           document_type: selectedDocType,
           status: 'processed',
         })
