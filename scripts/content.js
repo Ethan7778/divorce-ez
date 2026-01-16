@@ -9,6 +9,8 @@ let maxSetupAttempts = 5;
 let mutationObserver = null;
 let currentData = null;
 let isInitialized = false;
+let filledFields = new Set(); // Track which fields have been filled to prevent re-filling
+let isUICollapsed = false; // Track if UI is collapsed
 
 // Initialize immediately and on various events
 console.log('🔧 Divorce EZ Content Script loaded');
@@ -104,11 +106,8 @@ async function setupAutoFill() {
     // Create auto-fill button/indicator (always show, even with no data)
     createAutoFillUI(data);
 
-    // Set up MutationObserver to watch for dynamically added forms
-    setupMutationObserver(data);
-
-    // Detect and fill forms
-    fillForms(data);
+    // Set up MutationObserver to watch for dynamically added forms (but don't auto-fill)
+    setupMutationObserver();
   } catch (error) {
     console.error('❌ Error setting up auto-fill:', error);
     console.error('Error details:', {
@@ -124,17 +123,16 @@ async function setupAutoFill() {
 
 /**
  * Set up MutationObserver to watch for dynamically added forms
+ * (Just for logging, doesn't auto-fill)
  */
-function setupMutationObserver(data) {
+function setupMutationObserver() {
   // Clean up existing observer
   if (mutationObserver) {
     mutationObserver.disconnect();
   }
 
-  // Create new observer
+  // Create new observer (just for logging, no auto-fill)
   mutationObserver = new MutationObserver((mutations) => {
-    let shouldRefill = false;
-
     mutations.forEach((mutation) => {
       mutation.addedNodes.forEach((node) => {
         if (node.nodeType === Node.ELEMENT_NODE) {
@@ -144,18 +142,11 @@ function setupMutationObserver(data) {
               node.tagName === 'TEXTAREA' || 
               node.tagName === 'SELECT' ||
               node.querySelector('form, input, textarea, select')) {
-            shouldRefill = true;
+            console.log('👀 New form elements detected (use "Auto-Fill Forms" button to fill)');
           }
         }
       });
     });
-
-    if (shouldRefill && data) {
-      console.log('👀 New form elements detected, attempting to fill...');
-      setTimeout(() => {
-        fillForms(data);
-      }, 500); // Small delay to ensure form is fully rendered
-    }
   });
 
   // Start observing
@@ -195,9 +186,64 @@ function createAutoFillUI(data, errorMessage = null) {
     font-size: 14px;
   `;
 
+  // Header with title and collapse/close buttons
+  const header = document.createElement('div');
+  header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+
   const title = document.createElement('div');
   title.textContent = 'Divorce EZ Auto-Fill';
-  title.style.cssText = 'font-weight: bold; margin-bottom: 10px; color: #333; font-size: 16px;';
+  title.style.cssText = 'font-weight: bold; color: #333; font-size: 16px; flex: 1;';
+
+  // Collapse button
+  const collapseButton = document.createElement('button');
+  collapseButton.textContent = isUICollapsed ? '▼' : '▲';
+  collapseButton.style.cssText = `
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    color: #666;
+    padding: 2px 6px;
+    margin-right: 5px;
+  `;
+  collapseButton.title = isUICollapsed ? 'Expand' : 'Collapse';
+  collapseButton.onclick = () => {
+    isUICollapsed = !isUICollapsed;
+    const content = container.querySelector('#divorce-ez-content');
+    if (content) {
+      content.style.display = isUICollapsed ? 'none' : 'block';
+      collapseButton.textContent = isUICollapsed ? '▼' : '▲';
+      collapseButton.title = isUICollapsed ? 'Expand' : 'Collapse';
+    }
+  };
+
+  // Close button
+  const closeButton = document.createElement('button');
+  closeButton.textContent = '×';
+  closeButton.style.cssText = `
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 20px;
+    color: #666;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    line-height: 20px;
+  `;
+  closeButton.title = 'Close';
+  closeButton.onclick = () => {
+    container.style.display = 'none';
+  };
+
+  header.appendChild(title);
+  header.appendChild(collapseButton);
+  header.appendChild(closeButton);
+
+  // Content wrapper (for collapse functionality)
+  const content = document.createElement('div');
+  content.id = 'divorce-ez-content';
+  content.style.display = isUICollapsed ? 'none' : 'block';
 
   const status = document.createElement('div');
   status.id = 'divorce-ez-status';
@@ -244,6 +290,8 @@ function createAutoFillUI(data, errorMessage = null) {
       const response = await chrome.runtime.sendMessage({ action: 'getStoredData' });
       if (response && response.success && response.data) {
         currentData = response.data;
+        // Clear filled fields tracking when manually filling
+        filledFields.clear();
         fillForms(response.data);
         status.textContent = 'Forms filled!';
         status.style.color = '#4CAF50';
@@ -276,6 +324,7 @@ function createAutoFillUI(data, errorMessage = null) {
   `;
   clearButton.onclick = () => {
     clearAllFields();
+    filledFields.clear(); // Clear tracking when clearing fields
     status.textContent = 'Fields cleared';
     status.style.color = '#f44336';
   };
@@ -312,11 +361,13 @@ function createAutoFillUI(data, errorMessage = null) {
     }
   };
 
-  container.appendChild(title);
-  container.appendChild(status);
-  container.appendChild(fillButton);
-  container.appendChild(clearButton);
-  container.appendChild(refreshButton);
+  content.appendChild(status);
+  content.appendChild(fillButton);
+  content.appendChild(clearButton);
+  content.appendChild(refreshButton);
+  
+  container.appendChild(header);
+  container.appendChild(content);
   
   // Ensure body exists before appending
   if (document.body) {
@@ -366,25 +417,31 @@ function fillForms(data) {
     console.log(`📝 Form has ${inputs.length} input(s)`);
     
     inputs.forEach(input => {
+      // Create unique identifier for this field
+      const fieldId = `${input.name || input.id || ''}_${input.type}_${input.form?.id || 'noform'}`;
+      
+      // Skip if already filled (unless field is empty)
+      if (filledFields.has(fieldId) && input.value && input.value.trim() !== '') {
+        return;
+      }
+      
       const fieldName = getFieldName(input);
       const value = mapDataToField(fieldName, data);
       
       if (value !== null) {
-        fillField(input, value);
-        filledCount++;
-        
-        // Track filled fields for debugging
-        const fieldIdentifier = fieldName.name || fieldName.id || fieldName.label || 'unknown';
-        filledFields.push({
-          field: fieldIdentifier,
-          value: value,
-          type: input.type
-        });
-        
-        // Add visual indicator
-        addFieldIndicator(input, true);
-        
-        console.log(`✅ Filled field: ${fieldIdentifier} = ${value} (type: ${input.type})`);
+        // Only fill if field is empty or was previously filled by us
+        if (!input.value || input.value.trim() === '' || filledFields.has(fieldId)) {
+          fillField(input, value);
+          filledFields.add(fieldId); // Mark as filled
+          filledCount++;
+          
+          // Track filled fields for debugging
+          const fieldIdentifier = fieldName.name || fieldName.id || fieldName.label || 'unknown';
+          console.log(`✅ Filled field: ${fieldIdentifier} = ${value} (type: ${input.type})`);
+          
+          // Add visual indicator
+          addFieldIndicator(input, true);
+        }
       }
     });
   });
@@ -399,22 +456,29 @@ function fillForms(data) {
       return;
     }
     
+    // Create unique identifier for this field
+    const fieldId = `${input.name || input.id || ''}_${input.type}_standalone`;
+    
+    // Skip if already filled (unless field is empty)
+    if (filledFields.has(fieldId) && input.value && input.value.trim() !== '') {
+      return;
+    }
+    
     const fieldName = getFieldName(input);
     const value = mapDataToField(fieldName, data);
     
     if (value !== null) {
-      fillField(input, value);
-      filledCount++;
-      
-      const fieldIdentifier = fieldName.name || fieldName.id || fieldName.label || 'unknown';
-      filledFields.push({
-        field: fieldIdentifier,
-        value: value,
-        type: input.type
-      });
-      
-      addFieldIndicator(input, true);
-      console.log(`✅ Filled standalone field: ${fieldIdentifier} = ${value}`);
+      // Only fill if field is empty or was previously filled by us
+      if (!input.value || input.value.trim() === '' || filledFields.has(fieldId)) {
+        fillField(input, value);
+        filledFields.add(fieldId); // Mark as filled
+        filledCount++;
+        
+        const fieldIdentifier = fieldName.name || fieldName.id || fieldName.label || 'unknown';
+        console.log(`✅ Filled standalone field: ${fieldIdentifier} = ${value}`);
+        
+        addFieldIndicator(input, true);
+      }
     }
   });
 
@@ -574,11 +638,18 @@ function getLabelForInput(input) {
 
 /**
  * Map extracted data to form field
+ * Improved matching with better pattern recognition
  */
 function mapDataToField(fieldInfo, data) {
   const { name, label, placeholder, ariaLabel, dataTestId, dataName, title, parentText, type } = fieldInfo;
   // Combine all field identifiers for better matching
   const searchText = `${name} ${label} ${placeholder} ${ariaLabel} ${dataTestId} ${dataName} ${title} ${parentText}`.toLowerCase();
+  
+  // Normalize search text - remove common words that don't help matching
+  const normalizedSearch = searchText
+    .replace(/\b(enter|please|required|optional|field|input|text|box)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   const personalInfo = data.personal_info || {};
   const financialInfo = data.financial_info || {};
@@ -588,17 +659,24 @@ function mapDataToField(fieldInfo, data) {
   // Ensure income object exists (fallback to empty object if missing)
   const income = financialInfo.income || {};
 
-  // Name fields
-  if (searchText.match(/first\s*name|fname|given\s*name/i)) {
+  // Name fields - improved matching
+  // Check for first name (more specific patterns first)
+  if (normalizedSearch.match(/\b(first|fname|given|firstname|first_name)\b/i) && 
+      !normalizedSearch.match(/\b(last|middle|spouse|maiden)\b/i)) {
     return personalInfo.firstName || null;
   }
-  if (searchText.match(/last\s*name|lname|surname|family\s*name/i)) {
+  // Check for last name
+  if (normalizedSearch.match(/\b(last|lname|surname|family|lastname|last_name)\b/i) && 
+      !normalizedSearch.match(/\b(first|middle|spouse|maiden)\b/i)) {
     return personalInfo.lastName || null;
   }
-  if (searchText.match(/middle\s*name|mname/i)) {
+  // Check for middle name
+  if (normalizedSearch.match(/\b(middle|mname|middlename|middle_name|mi)\b/i)) {
     return personalInfo.middleName || null;
   }
-  if (searchText.match(/full\s*name|name/i) && !searchText.match(/first|last|middle|spouse/)) {
+  // Check for full name (only if no specific name type mentioned)
+  if (normalizedSearch.match(/\b(name|fullname|full_name)\b/i) && 
+      !normalizedSearch.match(/\b(first|last|middle|spouse|maiden|given|surname)\b/i)) {
     const fullName = [personalInfo.firstName, personalInfo.middleName, personalInfo.lastName]
       .filter(Boolean)
       .join(' ');
@@ -606,21 +684,21 @@ function mapDataToField(fieldInfo, data) {
   }
 
   // Spouse name
-  if (searchText.match(/spouse|spouse's|spouse\s+name|partner/i)) {
+  if (normalizedSearch.match(/\b(spouse|partner|spouse's|spousename|spouse_name)\b/i)) {
     return personalInfo.spouseName || marriageInfo.legalNamesAtMarriage?.spouse2 || null;
   }
 
   // Date of birth
-  if (searchText.match(/date\s*of\s*birth|dob|birth\s*date|birthday/i)) {
+  if (normalizedSearch.match(/\b(dob|dateofbirth|date_of_birth|birthdate|birth_date|birthday|born)\b/i)) {
     return personalInfo.dateOfBirth || null;
   }
 
   // Dependents/children
-  if (searchText.match(/dependent|child|children|minor/i)) {
+  if (normalizedSearch.match(/\b(dependent|dependents|child|children|minor|kids)\b/i)) {
     const dependents = personalInfo.dependents || [];
     if (dependents.length > 0) {
       // Return count or names depending on field type
-      if (type === 'number' || searchText.match(/count|number|how\s*many/)) {
+      if (type === 'number' || normalizedSearch.match(/\b(count|number|how\s*many|quantity)\b/i)) {
         return dependents.length;
       }
       // Return names as comma-separated list
@@ -630,7 +708,8 @@ function mapDataToField(fieldInfo, data) {
   }
 
   // Child name (specific child)
-  if (searchText.match(/child\s+name|dependent\s+name/i)) {
+  if (normalizedSearch.match(/\b(child|dependent)\b/i) && 
+      normalizedSearch.match(/\b(name)\b/i)) {
     const dependents = personalInfo.dependents || [];
     if (dependents.length > 0) {
       return dependents[0].name || null;
@@ -639,7 +718,8 @@ function mapDataToField(fieldInfo, data) {
   }
 
   // Child date of birth
-  if (searchText.match(/child\s+dob|child\s+date\s+of\s+birth|dependent\s+dob/i)) {
+  if (normalizedSearch.match(/\b(child|dependent)\b/i) && 
+      normalizedSearch.match(/\b(dob|dateofbirth|birthdate|birth)\b/i)) {
     const dependents = personalInfo.dependents || [];
     if (dependents.length > 0) {
       return dependents[0].dateOfBirth || null;
@@ -647,20 +727,25 @@ function mapDataToField(fieldInfo, data) {
     return null;
   }
 
-  // Address fields
-  if (searchText.match(/street\s*address|street/i)) {
+  // Address fields - improved matching
+  if (normalizedSearch.match(/\b(street|address|addr|streetaddress|street_address|line1|line\s*1)\b/i) && 
+      !normalizedSearch.match(/\b(city|state|zip|postal|mailing|email)\b/i)) {
     return personalInfo.address?.street || null;
   }
-  if (searchText.match(/city/i)) {
+  if (normalizedSearch.match(/\b(city|town)\b/i) && 
+      !normalizedSearch.match(/\b(state|zip|postal|street|address)\b/i)) {
     return personalInfo.address?.city || null;
   }
-  if (searchText.match(/state/i) && !searchText.match(/license|drivers|marriage/)) {
+  if (normalizedSearch.match(/\b(state|st)\b/i) && 
+      !normalizedSearch.match(/\b(license|drivers|marriage|zip|postal|city|street)\b/i)) {
     return personalInfo.address?.state || null;
   }
-  if (searchText.match(/zip|postal\s*code/i)) {
+  if (normalizedSearch.match(/\b(zip|postal|zipcode|zip_code|postalcode|postal_code|zcode)\b/i)) {
     return personalInfo.address?.zipCode || null;
   }
-  if (searchText.match(/address|addr/i) && !searchText.match(/street|city|state|zip/)) {
+  // Full address (only if no specific part mentioned)
+  if (normalizedSearch.match(/\b(address|addr|mailing|residence|residential)\b/i) && 
+      !normalizedSearch.match(/\b(street|city|state|zip|postal|email)\b/i)) {
     const addr = personalInfo.address;
     if (addr) {
       return [addr.street, addr.city, addr.state, addr.zipCode].filter(Boolean).join(', ') || null;
@@ -669,77 +754,97 @@ function mapDataToField(fieldInfo, data) {
   }
 
   // Contact info
-  if (searchText.match(/phone|telephone|mobile/i)) {
+  if (normalizedSearch.match(/\b(phone|telephone|mobile|cell|cellphone|cell_phone|phonenumber|phone_number)\b/i)) {
     return personalInfo.phone || null;
   }
-  if (searchText.match(/email|e-mail/i)) {
+  if (normalizedSearch.match(/\b(email|e-mail|e_mail|emailaddress|email_address)\b/i)) {
     return personalInfo.email || null;
   }
 
   // SSN (use last 4 if available)
-  if (searchText.match(/ssn|social\s*security|social\s*sec/i)) {
+  if (normalizedSearch.match(/\b(ssn|socialsecurity|social_security|socialsec|ss#|ss\s*#)\b/i)) {
     return personalInfo.ssnLast4 || personalInfo.ssn || null;
   }
 
   // License number
-  if (searchText.match(/license\s*number|dl\s*number|drivers?\s*license\s*number/i)) {
+  if (normalizedSearch.match(/\b(license|dl|driverslicense|driver_license|drivers_license|licensenumber|license_number|dlnumber|dl_number)\b/i) && 
+      normalizedSearch.match(/\b(number|#|num)\b/i) && 
+      !normalizedSearch.match(/\b(state)\b/i)) {
     return personalInfo.driverLicenseNumber || null;
   }
-  if (searchText.match(/license\s*state|dl\s*state|drivers?\s*license\s*state/i)) {
+  if (normalizedSearch.match(/\b(license|dl|driverslicense|driver_license|drivers_license)\b/i) && 
+      normalizedSearch.match(/\b(state|st)\b/i)) {
     return personalInfo.driverLicenseState || null;
   }
 
   // Marriage date
-  if (searchText.match(/marriage\s+date|date\s+of\s+marriage|married\s+date/i)) {
+  if (normalizedSearch.match(/\b(marriage|married)\b/i) && 
+      normalizedSearch.match(/\b(date|when)\b/i)) {
     return personalInfo.marriageDate || marriageInfo.marriageDate || null;
   }
 
   // Marriage place
-  if (searchText.match(/marriage\s+place|place\s+of\s+marriage|married\s+at/i)) {
+  if (normalizedSearch.match(/\b(marriage|married)\b/i) && 
+      normalizedSearch.match(/\b(place|location|where|at|city|county)\b/i)) {
     return personalInfo.marriagePlace || marriageInfo.marriagePlace || null;
   }
 
   // Filing status
-  if (searchText.match(/filing\s+status|tax\s+status/i)) {
+  if (normalizedSearch.match(/\b(filing|tax)\b/i) && 
+      normalizedSearch.match(/\b(status)\b/i)) {
     return personalInfo.filingStatus || null;
   }
 
-  // Income fields - detailed breakdown
-  if (searchText.match(/monthly\s*income|income\s*per\s*month/i)) {
+  // Income fields - improved matching with priority order
+  // Monthly income (most specific first)
+  if (normalizedSearch.match(/\b(monthly|per\s*month|month)\b/i) && 
+      normalizedSearch.match(/\b(income|earnings|pay|wage|salary)\b/i)) {
     return income.monthly || null;
   }
-  if (searchText.match(/annual\s*income|yearly\s*income|income\s*per\s*year/i)) {
+  // Annual income
+  if (normalizedSearch.match(/\b(annual|yearly|per\s*year|year|yearly)\b/i) && 
+      normalizedSearch.match(/\b(income|earnings|pay|wage|salary)\b/i)) {
     return income.annual || null;
   }
-  if (searchText.match(/wage\s*income|wages|salary/i)) {
+  // Wage income
+  if (normalizedSearch.match(/\b(wage|wages|salary|salaried|employment)\b/i) && 
+      !normalizedSearch.match(/\b(self|business|investment|rental)\b/i)) {
     return income.wage || null;
   }
-  if (searchText.match(/self[\s-]?employment|business\s+income|self\s+employed/i)) {
+  // Self-employment
+  if (normalizedSearch.match(/\b(self|selfemployment|self_employment|business|selfemployed|self_employed)\b/i) && 
+      normalizedSearch.match(/\b(income|earnings|pay)\b/i)) {
     return income.selfEmployment || null;
   }
-  if (searchText.match(/investment\s+income|interest\s+income|dividend/i)) {
+  // Investment income
+  if (normalizedSearch.match(/\b(investment|interest|dividend|dividends)\b/i) && 
+      normalizedSearch.match(/\b(income|earnings)\b/i)) {
     return income.investment || null;
   }
-  if (searchText.match(/rental\s+income|rental/i)) {
+  // Rental income
+  if (normalizedSearch.match(/\b(rental|rent)\b/i) && 
+      normalizedSearch.match(/\b(income|earnings)\b/i)) {
     return income.rental || null;
   }
   // Tax return specific fields
-  if (searchText.match(/total\s*income|line\s*9|form\s*1040\s*line\s*9/i)) {
+  if (normalizedSearch.match(/\b(total\s*income|line\s*9|1040\s*line\s*9)\b/i)) {
     return income.totalIncome || income.annual || null;
   }
-  if (searchText.match(/adjusted\s*gross\s*income|agi|line\s*11|form\s*1040\s*line\s*11/i)) {
+  if (normalizedSearch.match(/\b(adjusted\s*gross|agi|adjustedgross|adjusted_gross|line\s*11|1040\s*line\s*11)\b/i)) {
     return income.adjustedGrossIncome || income.annual || null;
   }
-  if (searchText.match(/income|gross\s*pay/i) && !searchText.match(/monthly|annual|wage|self|investment|rental|total|adjusted/)) {
+  // Generic income (last resort, only if no specific type mentioned)
+  if (normalizedSearch.match(/\b(income|earnings|gross\s*pay|grosspay)\b/i) && 
+      !normalizedSearch.match(/\b(monthly|annual|wage|self|investment|rental|total|adjusted|net)\b/i)) {
     return income.annual || income.monthly || null;
   }
 
   // Employer - handle multiple employers
-  if (searchText.match(/employer|company\s+name|work\s+for/i)) {
+  if (normalizedSearch.match(/\b(employer|company|work|employer_name|company_name|employername|companyname)\b/i)) {
     const employers = financialInfo.employers || [];
     if (employers.length > 0) {
       // If field asks for multiple employers or list, return comma-separated
-      if (type === 'textarea' || searchText.match(/all|list|multiple|employers/)) {
+      if (type === 'textarea' || normalizedSearch.match(/\b(all|list|multiple|employers)\b/i)) {
         return employers.map(e => e.name).filter(Boolean).join(', ') || null;
       }
       // Otherwise return first employer
@@ -749,53 +854,56 @@ function mapDataToField(fieldInfo, data) {
   }
 
   // Expenses
-  if (searchText.match(/housing|rent|mortgage/i)) {
+  if (normalizedSearch.match(/\b(housing|rent|mortgage|rental)\b/i) && 
+      !normalizedSearch.match(/\b(income)\b/i)) {
     return financialInfo.expenses?.housing || null;
   }
-  if (searchText.match(/utilities|utility/i)) {
+  if (normalizedSearch.match(/\b(utilities|utility|electric|water|gas)\b/i)) {
     return financialInfo.expenses?.utilities || null;
   }
-  if (searchText.match(/childcare|daycare|child\s+care/i)) {
+  if (normalizedSearch.match(/\b(childcare|daycare|childcare|child\s*care)\b/i)) {
     return financialInfo.expenses?.childcare || null;
   }
-  if (searchText.match(/debt\s+payment|debt|loan\s+payment/i)) {
+  if (normalizedSearch.match(/\b(debt|loan|payment|liability|liabilities)\b/i) && 
+      !normalizedSearch.match(/\b(income|asset)\b/i)) {
     return financialInfo.expenses?.debt || null;
   }
-  if (searchText.match(/transportation|car\s+payment|gas|vehicle/i)) {
+  if (normalizedSearch.match(/\b(transportation|car|vehicle|gas|gasoline|auto)\b/i)) {
     return financialInfo.expenses?.transportation || null;
   }
 
   // Insurance
-  if (searchText.match(/health\s+insurance|medical\s+insurance|insurance\s+premium/i)) {
+  if (normalizedSearch.match(/\b(insurance|health|medical|premium|premiums)\b/i)) {
     return financialInfo.insurance?.health || financialInfo.insurance?.premiums || null;
   }
 
   // Overtime
-  if (searchText.match(/overtime|ot/i)) {
+  if (normalizedSearch.match(/\b(overtime|ot)\b/i)) {
     return financialInfo.overtime || null;
   }
 
   // Bonuses
-  if (searchText.match(/bonus|bonuses/i)) {
+  if (normalizedSearch.match(/\b(bonus|bonuses)\b/i)) {
     return financialInfo.bonuses || null;
   }
 
   // Assets
-  if (searchText.match(/assets?|asset\s+value/i)) {
+  if (normalizedSearch.match(/\b(asset|assets|assetvalue|asset_value)\b/i)) {
     const assets = financialInfo.assets || [];
     const total = assets.reduce((sum, asset) => sum + (asset.value || 0), 0);
     return total > 0 ? total : null;
   }
 
   // Debts
-  if (searchText.match(/debts?|liabilities?|debt\s+amount/i)) {
+  if (normalizedSearch.match(/\b(debt|debts|liability|liabilities|debtamount|debt_amount)\b/i) && 
+      !normalizedSearch.match(/\b(income|asset)\b/i)) {
     const debts = financialInfo.debts || [];
     const total = debts.reduce((sum, debt) => sum + (debt.amount || 0), 0);
     return total > 0 ? total : null;
   }
 
   // Bank accounts
-  if (searchText.match(/bank\s*account|account\s*balance|bank\s*balance/i)) {
+  if (normalizedSearch.match(/\b(bank|account|balance|bankaccount|bank_account|accountbalance|account_balance|bankbalance|bank_balance)\b/i)) {
     const accounts = financialInfo.bankAccounts || [];
     const total = accounts.reduce((sum, account) => sum + (account.balance || 0), 0);
     return total > 0 ? total : null;
