@@ -450,6 +450,126 @@ function parseTaxReturn(text: string): Record<string, any> {
     data.employers = employers
   }
 
+  // FALLBACK: Extract from compact format (values at end of OCR text)
+  // Pattern: NAME SSN NAME SSN ADDRESS CITY, STATE ZIP AMOUNTS...
+  // Example: "JOE FARMER 001-01-0001 MARY FARMER 002-02-0002 1234 FAKE STREET X MANHATTAN, KS 66502 35,642. 450. 52,708. 6,700. X 25,100."
+  
+  // Extract primary taxpayer name from compact format (all caps name before first SSN)
+  if (!data.firstName || !data.lastName) {
+    const compactNameMatch = text.match(/\b([A-Z]{2,}(?:\s+[A-Z]{2,})+)\s+(\d{3}[-.\s]?\d{2}[-.\s]?\d{4})/)
+    if (compactNameMatch) {
+      const nameParts = compactNameMatch[1].trim().split(/\s+/)
+      if (nameParts.length >= 2) {
+        data.firstName = nameParts[0]
+        data.lastName = nameParts.slice(1).join(' ')
+        
+        // Extract SSN if not already found
+        if (!data.ssn) {
+          const ssn = compactNameMatch[2].replace(/[-.\s]/g, '')
+          if (ssn.length === 9) {
+            data.ssn = ssn
+            data.ssnLast4 = ssn.slice(-4)
+          }
+        }
+      }
+    }
+  }
+
+  // Extract spouse name (second name-SSN pair in compact format)
+  if (!data.spouseName) {
+    const allNameSsnPairs = text.match(/\b([A-Z]{2,}(?:\s+[A-Z]{2,})+)\s+(\d{3}[-.\s]?\d{2}[-.\s]?\d{4})/g)
+    if (allNameSsnPairs && allNameSsnPairs.length >= 2) {
+      const secondPair = allNameSsnPairs[1].match(/\b([A-Z]{2,}(?:\s+[A-Z]{2,})+)\s+(\d{3}[-.\s]?\d{2}[-.\s]?\d{4})/)
+      if (secondPair) {
+        data.spouseName = secondPair[1].trim()
+      }
+    }
+  }
+
+  // Extract address from compact format (street number + street name + city, state zip)
+  if (!data.address || !data.address.street) {
+    const addressCompactMatch = text.match(/(\d{1,5}\s+[A-Z0-9\s,#\-\.]+?)\s+([A-Z][A-Z\s]+),\s+([A-Z]{2})\s+(\d{5}(?:-\d{4})?)/)
+    if (addressCompactMatch) {
+      data.address = {
+        street: addressCompactMatch[1].trim(),
+        city: addressCompactMatch[2].trim(),
+        state: addressCompactMatch[3].trim(),
+        zipCode: addressCompactMatch[4].trim()
+      }
+    }
+  }
+
+  // Extract income amounts from compact format (dollar amounts in sequence)
+  // Look for substantial dollar amounts that represent income figures
+  if (!data.wageIncome || data.wageIncome === 1) {
+    // Find all dollar amounts with commas (likely income figures)
+    const amounts = text.match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g)
+    if (amounts) {
+      // Filter to reasonable income amounts (between 1,000 and 10,000,000)
+      const validAmounts = amounts
+        .map(a => parseFloat(a.replace(/,/g, '')))
+        .filter(a => a >= 1000 && a < 10000000)
+      
+      if (validAmounts.length > 0) {
+        // First substantial amount is likely wage income (Line 1)
+        data.wageIncome = validAmounts[0]
+        if (!data.annualIncome || data.annualIncome === 1) {
+          data.annualIncome = validAmounts[0]
+        }
+        
+        // Look for larger amounts that might be total income (Line 9) or AGI (Line 11)
+        // Usually these are the largest amounts
+        const sortedAmounts = [...validAmounts].sort((a, b) => b - a)
+        if (sortedAmounts[0] > validAmounts[0]) {
+          data.totalIncome = sortedAmounts[0]
+          data.annualIncome = sortedAmounts[0]
+        }
+        
+        // AGI is often the second largest or close to total income
+        if (sortedAmounts.length > 1 && sortedAmounts[1] > 0) {
+          data.adjustedGrossIncome = sortedAmounts[1]
+        }
+      }
+    }
+  }
+
+  // Extract dependents from compact format (name SSN relationship)
+  if (!data.dependents || data.dependents.length === 0) {
+    const dependents: Array<{ name: string; relationship?: string }> = []
+    // Look for pattern: NAME SSN RELATIONSHIP (all caps)
+    const dependentPattern = /\b([A-Z]{2,}(?:\s+[A-Z]{2,})+)\s+(\d{3}[-.\s]?\d{2}[-.\s]?\d{4})\s+([A-Z]{2,}(?:\s+[A-Z]{2,})*)/g
+    let dependentMatch
+    const seenNames = new Set<string>()
+    
+    // Add already extracted names to seen set
+    if (data.firstName && data.lastName) {
+      seenNames.add(`${data.firstName} ${data.lastName}`.toUpperCase())
+    }
+    if (data.spouseName) {
+      seenNames.add(data.spouseName.toUpperCase())
+    }
+    
+    while ((dependentMatch = dependentPattern.exec(text)) !== null) {
+      const name = dependentMatch[1].trim()
+      const relationship = dependentMatch[3]?.trim()
+      
+      // Skip if it's a taxpayer name (already extracted)
+      if (!seenNames.has(name.toUpperCase()) && 
+          name.length > 3 &&
+          !name.match(/^(FORM|SCHEDULE|LINE|IRS|INTERNAL|REVENUE|SERVICE|DEPARTMENT|TREASURY)$/i)) {
+        dependents.push({
+          name: name,
+          relationship: relationship
+        })
+        seenNames.add(name.toUpperCase())
+      }
+    }
+    
+    if (dependents.length > 0) {
+      data.dependents = dependents
+    }
+  }
+
   return data
 }
 
