@@ -1,22 +1,69 @@
 /**
  * Content Script - Detects and auto-fills forms on MyCase InterviewWEB pages
+ * Handles single-page app navigation and dynamic content loading
  */
 
-// Wait for page to be fully loaded
+// Global state
+let setupAttempts = 0;
+let maxSetupAttempts = 5;
+let mutationObserver = null;
+let currentData = null;
+let isInitialized = false;
+
+// Initialize immediately and on various events
+console.log('🔧 Divorce EZ Content Script loaded');
+
+// Try to initialize immediately
+tryInitAutoFill();
+
+// Also listen for DOM ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initAutoFill);
+  document.addEventListener('DOMContentLoaded', tryInitAutoFill);
 } else {
-  initAutoFill();
+  // Already loaded, try immediately
+  tryInitAutoFill();
 }
 
+// Listen for hash changes (SPA navigation)
+window.addEventListener('hashchange', () => {
+  console.log('🔄 Hash changed, re-initializing...');
+  setupAttempts = 0;
+  tryInitAutoFill();
+});
+
+// Listen for popstate (back/forward navigation)
+window.addEventListener('popstate', () => {
+  console.log('🔄 Popstate event, re-initializing...');
+  setupAttempts = 0;
+  tryInitAutoFill();
+});
+
 /**
- * Initialize auto-fill functionality
+ * Try to initialize auto-fill with retry logic
  */
-async function initAutoFill() {
-  // Wait a bit for dynamic content to load
-  setTimeout(() => {
+function tryInitAutoFill() {
+  if (isInitialized) {
+    // Already initialized, just update
     setupAutoFill();
-  }, 1000);
+    return;
+  }
+
+  const delays = [0, 1000, 3000, 5000, 8000]; // Try immediately, then 1s, 3s, 5s, 8s
+  
+  delays.forEach((delay, index) => {
+    setTimeout(() => {
+      if (setupAttempts < maxSetupAttempts) {
+        setupAttempts++;
+        console.log(`🔄 Setup attempt ${setupAttempts}/${maxSetupAttempts} (delay: ${delay}ms)`);
+        setupAutoFill();
+      }
+    }, delay);
+  });
+
+  // Mark as initialized after first attempt
+  if (!isInitialized) {
+    isInitialized = true;
+  }
 }
 
 /**
@@ -24,32 +71,111 @@ async function initAutoFill() {
  */
 async function setupAutoFill() {
   try {
+    console.log('🚀 Setting up auto-fill...');
+    
     // Get stored data
-    const response = await chrome.runtime.sendMessage({ action: 'getStoredData' });
-    if (!response.success || !response.data) {
-      console.log('No stored data found for auto-fill');
+    let response;
+    try {
+      response = await chrome.runtime.sendMessage({ action: 'getStoredData' });
+    } catch (error) {
+      console.error('❌ Failed to communicate with extension:', error);
+      // Still show UI even if we can't get data
+      createAutoFillUI(null);
+      return;
+    }
+
+    if (!response || !response.success) {
+      console.log('⚠️ No stored data found for auto-fill');
+      // Show UI anyway so user knows extension is working
+      createAutoFillUI(null);
       return;
     }
 
     const data = response.data;
+    currentData = data;
     
-    // Create auto-fill button/indicator
+    console.log('📦 Retrieved data for auto-fill:', {
+      hasData: !!data,
+      keys: Object.keys(data || {}),
+      hasPersonalInfo: !!(data && data.personal_info),
+      hasFinancialInfo: !!(data && data.financial_info)
+    });
+    
+    // Create auto-fill button/indicator (always show, even with no data)
     createAutoFillUI(data);
+
+    // Set up MutationObserver to watch for dynamically added forms
+    setupMutationObserver(data);
 
     // Detect and fill forms
     fillForms(data);
   } catch (error) {
-    console.error('Error setting up auto-fill:', error);
+    console.error('❌ Error setting up auto-fill:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    
+    // Show UI with error state
+    createAutoFillUI(null, error.message);
   }
 }
 
 /**
- * Create UI elements for auto-fill control
+ * Set up MutationObserver to watch for dynamically added forms
  */
-function createAutoFillUI(data) {
-  // Check if UI already exists
-  if (document.getElementById('divorce-ez-autofill-ui')) {
-    return;
+function setupMutationObserver(data) {
+  // Clean up existing observer
+  if (mutationObserver) {
+    mutationObserver.disconnect();
+  }
+
+  // Create new observer
+  mutationObserver = new MutationObserver((mutations) => {
+    let shouldRefill = false;
+
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          // Check if a form or input was added
+          if (node.tagName === 'FORM' || 
+              node.tagName === 'INPUT' || 
+              node.tagName === 'TEXTAREA' || 
+              node.tagName === 'SELECT' ||
+              node.querySelector('form, input, textarea, select')) {
+            shouldRefill = true;
+          }
+        }
+      });
+    });
+
+    if (shouldRefill && data) {
+      console.log('👀 New form elements detected, attempting to fill...');
+      setTimeout(() => {
+        fillForms(data);
+      }, 500); // Small delay to ensure form is fully rendered
+    }
+  });
+
+  // Start observing
+  mutationObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
+  console.log('👀 MutationObserver set up to watch for new forms');
+}
+
+/**
+ * Create UI elements for auto-fill control
+ * Always shows UI, even if no data is available
+ */
+function createAutoFillUI(data, errorMessage = null) {
+  // Remove existing UI if it exists
+  const existingUI = document.getElementById('divorce-ez-autofill-ui');
+  if (existingUI) {
+    existingUI.remove();
   }
 
   const container = document.createElement('div');
@@ -66,18 +192,32 @@ function createAutoFillUI(data) {
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     font-family: Arial, sans-serif;
     max-width: 300px;
+    font-size: 14px;
   `;
 
   const title = document.createElement('div');
   title.textContent = 'Divorce EZ Auto-Fill';
-  title.style.cssText = 'font-weight: bold; margin-bottom: 10px; color: #333;';
+  title.style.cssText = 'font-weight: bold; margin-bottom: 10px; color: #333; font-size: 16px;';
 
   const status = document.createElement('div');
   status.id = 'divorce-ez-status';
-  status.textContent = 'Ready to auto-fill';
-  status.style.cssText = 'margin-bottom: 10px; color: #666; font-size: 12px;';
+  
+  // Set status based on data availability
+  if (errorMessage) {
+    status.textContent = `Error: ${errorMessage}`;
+    status.style.cssText = 'margin-bottom: 10px; color: #f44336; font-size: 12px;';
+    container.style.borderColor = '#f44336';
+  } else if (!data) {
+    status.textContent = 'No data synced. Click "Sync Now" in extension popup.';
+    status.style.cssText = 'margin-bottom: 10px; color: #ff9800; font-size: 12px;';
+    container.style.borderColor = '#ff9800';
+  } else {
+    status.textContent = 'Ready to auto-fill';
+    status.style.cssText = 'margin-bottom: 10px; color: #666; font-size: 12px;';
+  }
 
   const fillButton = document.createElement('button');
+  fillButton.id = 'divorce-ez-fill-button';
   fillButton.textContent = 'Auto-Fill Forms';
   fillButton.style.cssText = `
     background: #4CAF50;
@@ -88,15 +228,37 @@ function createAutoFillUI(data) {
     cursor: pointer;
     width: 100%;
     margin-bottom: 5px;
+    font-size: 14px;
   `;
-  fillButton.onclick = () => {
-    chrome.runtime.sendMessage({ action: 'getStoredData' }, (response) => {
-      if (response.success && response.data) {
+  fillButton.disabled = !data;
+  if (!data) {
+    fillButton.style.opacity = '0.5';
+    fillButton.style.cursor = 'not-allowed';
+  }
+  
+  fillButton.onclick = async () => {
+    try {
+      fillButton.disabled = true;
+      fillButton.textContent = 'Loading...';
+      
+      const response = await chrome.runtime.sendMessage({ action: 'getStoredData' });
+      if (response && response.success && response.data) {
+        currentData = response.data;
         fillForms(response.data);
         status.textContent = 'Forms filled!';
         status.style.color = '#4CAF50';
+      } else {
+        status.textContent = 'No data available. Please sync first.';
+        status.style.color = '#ff9800';
       }
-    });
+    } catch (error) {
+      console.error('Error filling forms:', error);
+      status.textContent = `Error: ${error.message}`;
+      status.style.color = '#f44336';
+    } finally {
+      fillButton.disabled = false;
+      fillButton.textContent = 'Auto-Fill Forms';
+    }
   };
 
   const clearButton = document.createElement('button');
@@ -109,6 +271,8 @@ function createAutoFillUI(data) {
     border-radius: 4px;
     cursor: pointer;
     width: 100%;
+    margin-bottom: 5px;
+    font-size: 14px;
   `;
   clearButton.onclick = () => {
     clearAllFields();
@@ -116,22 +280,90 @@ function createAutoFillUI(data) {
     status.style.color = '#f44336';
   };
 
+  const refreshButton = document.createElement('button');
+  refreshButton.textContent = 'Refresh';
+  refreshButton.style.cssText = `
+    background: #2196F3;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    width: 100%;
+    font-size: 14px;
+  `;
+  refreshButton.onclick = async () => {
+    try {
+      refreshButton.disabled = true;
+      refreshButton.textContent = 'Refreshing...';
+      
+      setupAttempts = 0;
+      await setupAutoFill();
+      
+      status.textContent = 'Refreshed';
+      status.style.color = '#2196F3';
+    } catch (error) {
+      console.error('Error refreshing:', error);
+      status.textContent = `Error: ${error.message}`;
+      status.style.color = '#f44336';
+    } finally {
+      refreshButton.disabled = false;
+      refreshButton.textContent = 'Refresh';
+    }
+  };
+
   container.appendChild(title);
   container.appendChild(status);
   container.appendChild(fillButton);
   container.appendChild(clearButton);
-  document.body.appendChild(container);
+  container.appendChild(refreshButton);
+  
+  // Ensure body exists before appending
+  if (document.body) {
+    document.body.appendChild(container);
+  } else {
+    // Wait for body to be available
+    const observer = new MutationObserver((mutations, obs) => {
+      if (document.body) {
+        document.body.appendChild(container);
+        obs.disconnect();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true });
+  }
+
+  console.log('✅ Auto-fill UI created');
 }
 
 /**
  * Fill forms with extracted data
+ * Also handles standalone inputs (not in forms)
  */
 function fillForms(data) {
-  const forms = document.querySelectorAll('form');
+  if (!data) {
+    console.log('⚠️ No data provided to fillForms');
+    return;
+  }
+
+  console.log('🔍 Starting auto-fill with data:', {
+    hasPersonalInfo: !!data.personal_info,
+    hasFinancialInfo: !!data.financial_info,
+    personalInfoKeys: data.personal_info ? Object.keys(data.personal_info) : [],
+    financialInfoKeys: data.financial_info ? Object.keys(data.financial_info) : [],
+    hasIncome: !!(data.financial_info && data.financial_info.income),
+    incomeKeys: data.financial_info && data.financial_info.income ? Object.keys(data.financial_info.income) : []
+  });
+
   let filledCount = 0;
+  const filledFields = [];
+
+  // Find all forms
+  const forms = document.querySelectorAll('form');
+  console.log(`📋 Found ${forms.length} form(s)`);
 
   forms.forEach(form => {
     const inputs = form.querySelectorAll('input, textarea, select');
+    console.log(`📝 Form has ${inputs.length} input(s)`);
     
     inputs.forEach(input => {
       const fieldName = getFieldName(input);
@@ -140,15 +372,112 @@ function fillForms(data) {
       if (value !== null) {
         fillField(input, value);
         filledCount++;
+        
+        // Track filled fields for debugging
+        const fieldIdentifier = fieldName.name || fieldName.id || fieldName.label || 'unknown';
+        filledFields.push({
+          field: fieldIdentifier,
+          value: value,
+          type: input.type
+        });
+        
+        // Add visual indicator
+        addFieldIndicator(input, true);
+        
+        console.log(`✅ Filled field: ${fieldIdentifier} = ${value} (type: ${input.type})`);
       }
     });
   });
 
+  // Also check for standalone inputs (not in forms) - MyCase might use these
+  const standaloneInputs = document.querySelectorAll('input:not(form input), textarea:not(form textarea), select:not(form select)');
+  console.log(`📝 Found ${standaloneInputs.length} standalone input(s)`);
+  
+  standaloneInputs.forEach(input => {
+    // Skip if already in a form
+    if (input.closest('form')) {
+      return;
+    }
+    
+    const fieldName = getFieldName(input);
+    const value = mapDataToField(fieldName, data);
+    
+    if (value !== null) {
+      fillField(input, value);
+      filledCount++;
+      
+      const fieldIdentifier = fieldName.name || fieldName.id || fieldName.label || 'unknown';
+      filledFields.push({
+        field: fieldIdentifier,
+        value: value,
+        type: input.type
+      });
+      
+      addFieldIndicator(input, true);
+      console.log(`✅ Filled standalone field: ${fieldIdentifier} = ${value}`);
+    }
+  });
+
+  // Log summary
+  console.log(`📊 Auto-fill complete: Filled ${filledCount} field(s)`, filledFields);
+
   // Update status
   const status = document.getElementById('divorce-ez-status');
   if (status) {
-    status.textContent = `Filled ${filledCount} field(s)`;
-    status.style.color = '#4CAF50';
+    if (filledCount > 0) {
+      status.textContent = `Filled ${filledCount} field(s)`;
+      status.style.color = '#4CAF50';
+    } else {
+      status.textContent = 'No matching fields found';
+      status.style.color = '#ff9800';
+    }
+  }
+}
+
+/**
+ * Add visual indicator to form field (for debugging)
+ */
+function addFieldIndicator(input, filled) {
+  // Remove existing indicator
+  const existingIndicator = input.parentElement?.querySelector('.divorce-ez-indicator');
+  if (existingIndicator) {
+    existingIndicator.remove();
+  }
+  
+  // Only add indicator if filled (to avoid cluttering the page)
+  if (filled) {
+    const indicator = document.createElement('span');
+    indicator.className = 'divorce-ez-indicator';
+    indicator.textContent = '✓';
+    indicator.style.cssText = `
+      position: absolute;
+      right: 5px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #4CAF50;
+      font-weight: bold;
+      font-size: 14px;
+      pointer-events: none;
+      z-index: 1000;
+    `;
+    
+    // Make input container relative if not already
+    const container = input.parentElement;
+    if (container && getComputedStyle(container).position === 'static') {
+      container.style.position = 'relative';
+    }
+    
+    // Insert indicator
+    if (container) {
+      container.appendChild(indicator);
+      
+      // Remove indicator after 3 seconds
+      setTimeout(() => {
+        if (indicator.parentElement) {
+          indicator.remove();
+        }
+      }, 3000);
+    }
   }
 }
 
@@ -160,13 +489,63 @@ function getFieldName(input) {
   const name = input.name || input.id || '';
   const label = getLabelForInput(input);
   const placeholder = input.placeholder || '';
+  const ariaLabel = input.getAttribute('aria-label') || '';
+  const dataTestId = input.getAttribute('data-testid') || '';
+  const dataName = input.getAttribute('data-name') || '';
+  const title = input.getAttribute('title') || '';
+  
+  // Get parent container text (for MyCase forms that use divs)
+  const parentText = getParentText(input);
   
   return {
     name: name.toLowerCase(),
     label: label.toLowerCase(),
     placeholder: placeholder.toLowerCase(),
+    ariaLabel: ariaLabel.toLowerCase(),
+    dataTestId: dataTestId.toLowerCase(),
+    dataName: dataName.toLowerCase(),
+    title: title.toLowerCase(),
+    parentText: parentText.toLowerCase(),
     type: input.type
   };
+}
+
+/**
+ * Get text from parent elements (useful for MyCase forms)
+ */
+function getParentText(input) {
+  let text = '';
+  let element = input.parentElement;
+  let depth = 0;
+  
+  // Check up to 3 levels up for text
+  while (element && depth < 3) {
+    // Check for label text
+    const label = element.querySelector('label');
+    if (label && label.textContent) {
+      text += ' ' + label.textContent.trim();
+    }
+    
+    // Check for text nodes
+    const textNodes = Array.from(element.childNodes)
+      .filter(node => node.nodeType === Node.TEXT_NODE)
+      .map(node => node.textContent.trim())
+      .filter(t => t.length > 0);
+    if (textNodes.length > 0) {
+      text += ' ' + textNodes.join(' ');
+    }
+    
+    // Check for aria-label on parent
+    const ariaLabel = element.getAttribute('aria-label');
+    if (ariaLabel) {
+      text += ' ' + ariaLabel.trim();
+    }
+    
+    element = element.parentElement;
+    depth++;
+  }
+  
+  return text.trim();
 }
 
 /**
@@ -197,13 +576,17 @@ function getLabelForInput(input) {
  * Map extracted data to form field
  */
 function mapDataToField(fieldInfo, data) {
-  const { name, label, placeholder, type } = fieldInfo;
-  const searchText = `${name} ${label} ${placeholder}`.toLowerCase();
+  const { name, label, placeholder, ariaLabel, dataTestId, dataName, title, parentText, type } = fieldInfo;
+  // Combine all field identifiers for better matching
+  const searchText = `${name} ${label} ${placeholder} ${ariaLabel} ${dataTestId} ${dataName} ${title} ${parentText}`.toLowerCase();
 
   const personalInfo = data.personal_info || {};
   const financialInfo = data.financial_info || {};
   const marriageInfo = data.marriage_info || {};
   const courtInfo = data.court_info || {};
+  
+  // Ensure income object exists (fallback to empty object if missing)
+  const income = financialInfo.income || {};
 
   // Name fields
   if (searchText.match(/first\s*name|fname|given\s*name/i)) {
@@ -323,31 +706,43 @@ function mapDataToField(fieldInfo, data) {
 
   // Income fields - detailed breakdown
   if (searchText.match(/monthly\s*income|income\s*per\s*month/i)) {
-    return financialInfo.income?.monthly || null;
+    return income.monthly || null;
   }
   if (searchText.match(/annual\s*income|yearly\s*income|income\s*per\s*year/i)) {
-    return financialInfo.income?.annual || null;
+    return income.annual || null;
   }
   if (searchText.match(/wage\s*income|wages|salary/i)) {
-    return financialInfo.income?.wage || null;
+    return income.wage || null;
   }
   if (searchText.match(/self[\s-]?employment|business\s+income|self\s+employed/i)) {
-    return financialInfo.income?.selfEmployment || null;
+    return income.selfEmployment || null;
   }
   if (searchText.match(/investment\s+income|interest\s+income|dividend/i)) {
-    return financialInfo.income?.investment || null;
+    return income.investment || null;
   }
   if (searchText.match(/rental\s+income|rental/i)) {
-    return financialInfo.income?.rental || null;
+    return income.rental || null;
   }
-  if (searchText.match(/income|gross\s*pay/i) && !searchText.match(/monthly|annual|wage|self|investment|rental/)) {
-    return financialInfo.income?.annual || financialInfo.income?.monthly || null;
+  // Tax return specific fields
+  if (searchText.match(/total\s*income|line\s*9|form\s*1040\s*line\s*9/i)) {
+    return income.totalIncome || income.annual || null;
+  }
+  if (searchText.match(/adjusted\s*gross\s*income|agi|line\s*11|form\s*1040\s*line\s*11/i)) {
+    return income.adjustedGrossIncome || income.annual || null;
+  }
+  if (searchText.match(/income|gross\s*pay/i) && !searchText.match(/monthly|annual|wage|self|investment|rental|total|adjusted/)) {
+    return income.annual || income.monthly || null;
   }
 
-  // Employer
+  // Employer - handle multiple employers
   if (searchText.match(/employer|company\s+name|work\s+for/i)) {
     const employers = financialInfo.employers || [];
     if (employers.length > 0) {
+      // If field asks for multiple employers or list, return comma-separated
+      if (type === 'textarea' || searchText.match(/all|list|multiple|employers/)) {
+        return employers.map(e => e.name).filter(Boolean).join(', ') || null;
+      }
+      // Otherwise return first employer
       return employers[0].name || null;
     }
     return null;
@@ -447,5 +842,18 @@ function clearAllFields() {
       }
       input.dispatchEvent(new Event('change', { bubbles: true }));
     });
+  });
+  
+  // Also clear standalone inputs
+  const standaloneInputs = document.querySelectorAll('input:not(form input), textarea:not(form textarea), select:not(form select)');
+  standaloneInputs.forEach(input => {
+    if (!input.closest('form')) {
+      if (input.type === 'checkbox' || input.type === 'radio') {
+        input.checked = false;
+      } else {
+        input.value = '';
+      }
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
   });
 }

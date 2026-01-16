@@ -119,4 +119,4 @@ SELECT
   is_nullable
 FROM information_schema.columns
 WHERE table_name IN ('form_data', 'extracted_data', 'documents')
-ORDER BY table_name, ordinal_position;
+ORDER BY table_name, ordinal_position

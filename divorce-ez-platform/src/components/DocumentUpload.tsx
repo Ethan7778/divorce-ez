@@ -141,9 +141,14 @@ async function updateFormData(userId: string, extractedData: Record<string, any>
     if (!income.investment) income.investment = getValue(extractedData, 'investmentIncome', 'investment_income') as number | undefined
     if (!income.rental) income.rental = getValue(extractedData, 'rentalIncome', 'rental_income') as number | undefined
     
+    // Tax return specific fields
+    if (!income.totalIncome) income.totalIncome = getValue(extractedData, 'totalIncome', 'total_income') as number | undefined
+    if (!income.adjustedGrossIncome) income.adjustedGrossIncome = getValue(extractedData, 'adjustedGrossIncome', 'adjusted_gross_income', 'agi', 'AGI') as number | undefined
+    
     // Pay frequency
     if (!income.payFrequency) income.payFrequency = getValue(extractedData, 'payFrequency', 'pay_frequency') as FinancialInfo['income']['payFrequency']
     
+    // Ensure income object always exists (even if empty)
     financialInfo.income = income
 
     // Employers

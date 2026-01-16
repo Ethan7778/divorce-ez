@@ -150,12 +150,26 @@ class ApiService {
       if (formDataResponse.ok) {
         const formDataArray = await formDataResponse.json()
         if (formDataArray && formDataArray.length > 0) {
-          return {
+          const formData = {
             personal_info: formDataArray[0].personal_info || {},
             financial_info: formDataArray[0].financial_info || {},
             marriage_info: formDataArray[0].marriage_info || {},
             court_info: formDataArray[0].court_info || {}
           }
+          
+          // Log data structure for debugging
+          console.log('📊 Fetched form_data structure:', {
+            hasPersonalInfo: !!formData.personal_info,
+            hasFinancialInfo: !!formData.financial_info,
+            hasMarriageInfo: !!formData.marriage_info,
+            hasCourtInfo: !!formData.court_info,
+            personalInfoKeys: Object.keys(formData.personal_info),
+            financialInfoKeys: Object.keys(formData.financial_info),
+            hasIncome: !!formData.financial_info.income,
+            incomeKeys: formData.financial_info.income ? Object.keys(formData.financial_info.income) : []
+          })
+          
+          return formData
         }
       }
 
@@ -177,7 +191,7 @@ class ApiService {
       if (documentsResponse.ok) {
         const documents = await documentsResponse.json()
         const personalInfo = {}
-        const financialInfo = {}
+        const financialInfo = { income: {} } // Ensure income object exists
 
         // Get extracted data for each document
         for (const doc of documents) {
@@ -230,33 +244,75 @@ class ApiService {
               if (!personalInfo.zipCode) personalInfo.zipCode = getValue(extracted, 'zipCode', 'zip', 'zip_code', 'postalCode', 'postal_code')
               
               // Merge financial info - handle field name variations
-              if (!financialInfo.totalIncome) financialInfo.totalIncome = getValue(extracted, 'totalIncome', 'total_income', 'income', 'annualIncome', 'annual_income')
-              if (!financialInfo.grossPay) financialInfo.grossPay = getValue(extracted, 'grossPay', 'gross_pay', 'gross', 'grossIncome', 'gross_income')
-              if (!financialInfo.netPay) financialInfo.netPay = getValue(extracted, 'netPay', 'net_pay', 'net', 'netIncome', 'net_income')
-              if (!financialInfo.employerName) financialInfo.employerName = getValue(extracted, 'employerName', 'employer_name', 'employer', 'company', 'companyName', 'company_name')
-              if (!financialInfo.filingStatus) financialInfo.filingStatus = getValue(extracted, 'filingStatus', 'filing_status', 'status')
-              if (!financialInfo.dependents) financialInfo.dependents = getValue(extracted, 'dependents', 'dependents_count', 'numDependents')
+              // Ensure income object exists
+              if (!financialInfo.income) financialInfo.income = {}
+              
+              // Income fields
+              if (!financialInfo.income.annual) {
+                financialInfo.income.annual = getValue(extracted, 'annualIncome', 'annual_income', 'totalIncome', 'total_income', 'adjustedGrossIncome', 'adjusted_gross_income', 'agi', 'AGI')
+              }
+              if (!financialInfo.income.monthly) {
+                financialInfo.income.monthly = getValue(extracted, 'monthlyIncome', 'monthly_income', 'grossPay', 'gross_pay', 'gross')
+              }
+              if (!financialInfo.income.wage) {
+                financialInfo.income.wage = getValue(extracted, 'wageIncome', 'wage_income', 'wages', 'wage', 'compensation', 'salary')
+              }
+              if (!financialInfo.income.totalIncome) {
+                financialInfo.income.totalIncome = getValue(extracted, 'totalIncome', 'total_income')
+              }
+              if (!financialInfo.income.adjustedGrossIncome) {
+                financialInfo.income.adjustedGrossIncome = getValue(extracted, 'adjustedGrossIncome', 'adjusted_gross_income', 'agi', 'AGI')
+              }
+              if (!financialInfo.income.selfEmployment) {
+                financialInfo.income.selfEmployment = getValue(extracted, 'selfEmploymentIncome', 'self_employment_income', 'netIncome')
+              }
+              if (!financialInfo.income.rental) {
+                financialInfo.income.rental = getValue(extracted, 'rentalIncome', 'rental_income')
+              }
+              
+              // Other financial fields
+              if (!financialInfo.employers) {
+                const employers = extracted.employers
+                if (Array.isArray(employers) && employers.length > 0) {
+                  financialInfo.employers = employers
+                } else {
+                  const employerName = getValue(extracted, 'employerName', 'employer_name', 'employer', 'company', 'companyName', 'company_name')
+                  if (employerName) {
+                    financialInfo.employers = [{ name: employerName }]
+                  }
+                }
+              }
               if (!financialInfo.bankName) financialInfo.bankName = getValue(extracted, 'bankName', 'bank_name', 'bank', 'financialInstitution', 'financial_institution')
               if (!financialInfo.accountNumber) financialInfo.accountNumber = getValue(extracted, 'accountNumber', 'account_number', 'acctNumber', 'acct_number')
               if (!financialInfo.balance) financialInfo.balance = getValue(extracted, 'balance', 'accountBalance', 'account_balance', 'currentBalance', 'current_balance')
-              if (!financialInfo.wages) financialInfo.wages = getValue(extracted, 'wages', 'wage', 'compensation', 'salary')
-              if (!financialInfo.adjustedGrossIncome) financialInfo.adjustedGrossIncome = getValue(extracted, 'adjustedGrossIncome', 'adjusted_gross_income', 'agi', 'AGI')
             }
           }
         }
 
-        return {
+        const fallbackData = {
           personal_info: personalInfo,
           financial_info: financialInfo,
           marriage_info: {},
           court_info: {}
         }
+        
+        // Log fallback data structure for debugging
+        console.log('📊 Aggregated data from extracted_data (fallback):', {
+          hasPersonalInfo: !!fallbackData.personal_info,
+          hasFinancialInfo: !!fallbackData.financial_info,
+          personalInfoKeys: Object.keys(fallbackData.personal_info),
+          financialInfoKeys: Object.keys(fallbackData.financial_info),
+          hasIncome: !!fallbackData.financial_info.income,
+          incomeKeys: fallbackData.financial_info.income ? Object.keys(fallbackData.financial_info.income) : []
+        })
+        
+        return fallbackData
       }
 
-      // Return empty if nothing found
+      // Return empty if nothing found (but ensure income object exists)
       return {
         personal_info: {},
-        financial_info: {},
+        financial_info: { income: {} },
         marriage_info: {},
         court_info: {}
       }
