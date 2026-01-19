@@ -4,6 +4,8 @@
  */
 
 import { supabase } from '../lib/supabase'
+import { logger } from '../utils/logger'
+import { validateUserId } from '../utils/validation'
 import type {
   PersonalInfoRow,
   SpouseInfoRow,
@@ -61,7 +63,7 @@ export async function getFormData(userId: string): Promise<NormalizedFormData> {
       court_info: courtInfoResult.data || null,
     }
   } catch (error) {
-    console.error('Error getting form data:', error)
+    logger.error('Error getting form data:', error)
     throw error
   }
 }
@@ -73,34 +75,23 @@ export async function updatePersonalInfo(
   userId: string,
   data: Partial<Omit<PersonalInfoRow, 'id' | 'user_id' | 'last_updated'>>
 ): Promise<PersonalInfoRow> {
-  console.log('💾 updatePersonalInfo called:', {
-    userId,
-    dataKeys: Object.keys(data),
-    dataValues: data,
-  })
-
-  if (!userId) {
-    throw new Error('User ID is required for updatePersonalInfo')
-  }
+  const validatedUserId = validateUserId(userId)
 
   const payload = {
-    user_id: userId,
+    user_id: validatedUserId,
     ...data,
     last_updated: new Date().toISOString(),
   }
 
-  console.log('📤 Upserting to personal_info:', payload)
-
   // Verify authentication
-  const { data: { user: authUser } } = await supabase.auth.getUser()
-  console.log('🔐 Auth check:', {
-    authUserId: authUser?.id,
-    targetUserId: userId,
-    match: authUser?.id === userId,
-  })
+  const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+  
+  if (authError || !authUser) {
+    throw new Error('Authentication required')
+  }
 
-  if (!authUser || authUser.id !== userId) {
-    throw new Error(`Authentication mismatch: auth user is ${authUser?.id || 'null'}, but trying to update ${userId}`)
+  if (authUser.id !== validatedUserId) {
+    throw new Error('Unauthorized: Cannot update another user\'s data')
   }
 
   const { data: result, error } = await supabase
@@ -110,17 +101,15 @@ export async function updatePersonalInfo(
     .single()
 
   if (error) {
-    console.error('❌ Error upserting personal_info:', error)
-    console.error('Error details:', {
-      message: error.message,
+    logger.error('Error upserting personal_info:', {
       code: error.code,
-      details: error.details,
+      message: error.message,
       hint: error.hint,
     })
     throw error
   }
 
-  console.log('✅ Personal info upserted successfully:', result)
+  logger.debug('Personal info updated successfully')
   return result
 }
 
@@ -359,19 +348,22 @@ export async function migrateFromExtractedData(
   documentType?: string
 ): Promise<void> {
   try {
-    if (!userId) {
-      throw new Error('User ID is required for data migration')
+    const validatedUserId = validateUserId(userId)
+
+    // Validate extractedData
+    if (!extractedData || typeof extractedData !== 'object' || Array.isArray(extractedData)) {
+      logger.warn('Invalid extractedData provided, skipping migration')
+      return
     }
-    
-    console.log('🔄 Migrating extracted data to normalized tables:', {
-      userId,
+
+    logger.debug('Migrating extracted data to normalized tables', {
       documentType,
       extractedKeys: Object.keys(extractedData),
-      extractedDataSample: JSON.stringify(extractedData, null, 2).substring(0, 1000),
     })
 
     // Helper to get value with fallbacks
     const getValue = (obj: Record<string, any>, ...keys: string[]): any => {
+      if (!obj || typeof obj !== 'object') return null
       for (const key of keys) {
         if (obj[key] != null && obj[key] !== '') return obj[key]
       }
@@ -379,13 +371,7 @@ export async function migrateFromExtractedData(
     }
 
     // Get existing data to merge intelligently
-    console.log('📥 Fetching existing form data for user:', userId)
-    const existingData = await getFormData(userId)
-    console.log('📦 Existing data:', {
-      hasPersonalInfo: !!existingData.personal_info,
-      hasSpouseInfo: !!existingData.spouse_info,
-      childrenCount: existingData.children?.length || 0,
-    })
+    const existingData = await getFormData(validatedUserId)
 
     // ========================================================================
     // Personal Info (Spouse 1)
@@ -461,37 +447,21 @@ export async function migrateFromExtractedData(
         getValue(extractedData, 'phone') ||
         getValue(extractedData, 'licenseNumber', 'driverLicenseNumber')
 
-      console.log('🔍 Personal info check:', {
-        hasPersonalInfoUpdates,
-        personalInfoUpdatesKeys: Object.keys(personalInfoUpdates),
-        hasAnyPersonalData,
-        extractedDataKeys: Object.keys(extractedData),
-      })
-
       // Always update if we have any updates, or if we need to create a record
       if (hasPersonalInfoUpdates || Object.keys(personalInfoUpdates).length > 0) {
-        console.log('💾 Updating personal_info with:', personalInfoUpdates)
-        console.log('💾 User ID:', userId)
         try {
-          const result = await updatePersonalInfo(userId, personalInfoUpdates)
-          console.log('✅ Personal info updated successfully:', result)
+          await updatePersonalInfo(validatedUserId, personalInfoUpdates)
+          logger.debug('Personal info updated successfully')
         } catch (updateError: any) {
-          console.error('❌ Error updating personal_info:', updateError)
-          console.error('Error details:', {
-            message: updateError.message,
+          logger.error('Error updating personal_info:', {
             code: updateError.code,
-            details: updateError.details,
+            message: updateError.message,
             hint: updateError.hint,
           })
           throw updateError
         }
       } else if (hasAnyPersonalData) {
-        // We have data but it didn't match our field checks - log for debugging
-        console.warn('⚠️ Found personal data but no fields matched:', {
-          extractedDataSample: JSON.stringify(extractedData, null, 2).substring(0, 1000),
-        })
-      } else {
-        console.log('⚠️ No personal info updates to save - no personal data found in extracted data')
+        logger.warn('Found personal data but no fields matched')
       }
 
     // ========================================================================
@@ -506,7 +476,7 @@ export async function migrateFromExtractedData(
       if (spouseNameToUse && typeof spouseNameToUse === 'string') {
         const nameParts = spouseNameToUse.trim().split(/\s+/)
         if (nameParts.length >= 2 && !existingData.spouse_info?.first_name) {
-          await updateSpouseInfo(userId, {
+          await updateSpouseInfo(validatedUserId, {
             first_name: nameParts[0],
             last_name: nameParts.slice(1).join(' '),
           })
@@ -527,7 +497,7 @@ export async function migrateFromExtractedData(
         overnights_with_spouse1: null,
         overnights_with_spouse2: null,
       }))
-      await updateChildren(userId, children)
+      await updateChildren(validatedUserId, children)
     }
 
     // ========================================================================
@@ -605,7 +575,7 @@ export async function migrateFromExtractedData(
       }
 
       if (Object.keys(incomeUpdates).length > 0) {
-        await updateIncome(userId, 1, incomeUpdates)
+        await updateIncome(validatedUserId, 1, incomeUpdates)
       }
     }
 
@@ -620,11 +590,11 @@ export async function migrateFromExtractedData(
           income_type: emp.incomeType || emp.income_type || null,
         })
       )
-      await updateEmployers(userId, 1, employers)
+      await updateEmployers(validatedUserId, 1, employers)
     } else if (extractedData.employerName || extractedData.employer_name) {
       const employerName = getValue(extractedData, 'employerName', 'employer_name', 'employer', 'company', 'companyName')
       if (employerName) {
-        await updateEmployers(userId, 1, [
+        await updateEmployers(validatedUserId, 1, [
           {
             employer_name: employerName as string,
             income_amount: null,
@@ -673,7 +643,7 @@ export async function migrateFromExtractedData(
       }
 
       if (Object.keys(expenseUpdates).length > 0) {
-        await updateExpenses(userId, 1, expenseUpdates)
+        await updateExpenses(validatedUserId, 1, expenseUpdates)
       }
     }
 
@@ -689,7 +659,7 @@ export async function migrateFromExtractedData(
         bank_name: null,
         account_number: null,
       }))
-      await updateAssets(userId, assets)
+      await updateAssets(validatedUserId, assets)
     }
 
     // Bank accounts as assets
@@ -703,7 +673,7 @@ export async function migrateFromExtractedData(
         account_number: account.accountNumber || null,
       }))
       const existingAssets = existingData.assets || []
-      await updateAssets(userId, [...existingAssets, ...bankAssets])
+      await updateAssets(validatedUserId, [...existingAssets, ...bankAssets])
     } else if (extractedData.bankName || extractedData.balance) {
       const bankAsset: Omit<AssetRow, 'id' | 'user_id' | 'last_updated'> = {
         asset_type: 'bank_account',
@@ -714,7 +684,7 @@ export async function migrateFromExtractedData(
         account_number: getValue(extractedData, 'accountNumber', 'account_number') as string | null,
       }
       const existingAssets = existingData.assets || []
-      await updateAssets(userId, [...existingAssets, bankAsset])
+      await updateAssets(validatedUserId, [...existingAssets, bankAsset])
     }
 
     // ========================================================================
@@ -727,7 +697,7 @@ export async function migrateFromExtractedData(
         approximate_balance: debt.amount || debt.balance || null,
         monthly_payment: debt.monthlyPayment || debt.monthly_payment || null,
       }))
-      await updateDebts(userId, debts)
+      await updateDebts(validatedUserId, debts)
     }
 
     // ========================================================================
@@ -758,7 +728,7 @@ export async function migrateFromExtractedData(
       }
 
       if (Object.keys(marriageUpdates).length > 0) {
-        await updateMarriageInfo(userId, marriageUpdates)
+        await updateMarriageInfo(validatedUserId, marriageUpdates)
       }
     }
 
@@ -802,13 +772,13 @@ export async function migrateFromExtractedData(
       }
 
       if (Object.keys(courtUpdates).length > 0) {
-        await updateCourtInfo(userId, courtUpdates)
+        await updateCourtInfo(validatedUserId, courtUpdates)
       }
     }
 
-    console.log('✅ Successfully migrated extracted data to normalized tables')
+    logger.debug('Successfully migrated extracted data to normalized tables')
   } catch (error) {
-    console.error('❌ Error migrating extracted data:', error)
+    logger.error('Error migrating extracted data:', error)
     throw error
   }
 }
@@ -819,32 +789,32 @@ export async function migrateFromExtractedData(
  */
 export async function reAggregateFormDataFromDocuments(userId: string): Promise<void> {
   try {
-    console.log('🔄 Re-aggregating form data from all documents for user:', userId)
+    const validatedUserId = validateUserId(userId)
 
     // Get all documents for this user
     const { data: documents, error: docsError } = await supabase
       .from('documents')
       .select('id, document_type')
-      .eq('user_id', userId)
+      .eq('user_id', validatedUserId)
       .eq('status', 'processed')
       .order('uploaded_at', { ascending: false })
 
     if (docsError) throw docsError
 
     if (!documents || documents.length === 0) {
-      console.log('⚠️ No documents found, clearing normalized tables')
+      logger.debug('No documents found, clearing normalized tables')
       // Clear all normalized data if no documents remain
       await Promise.all([
-        supabase.from('personal_info').delete().eq('user_id', userId),
-        supabase.from('spouse_info').delete().eq('user_id', userId),
-        supabase.from('children').delete().eq('user_id', userId),
-        supabase.from('income').delete().eq('user_id', userId),
-        supabase.from('employers').delete().eq('user_id', userId),
-        supabase.from('expenses').delete().eq('user_id', userId),
-        supabase.from('assets').delete().eq('user_id', userId),
-        supabase.from('debts').delete().eq('user_id', userId),
-        supabase.from('marriage_info').delete().eq('user_id', userId),
-        supabase.from('court_info').delete().eq('user_id', userId),
+        supabase.from('personal_info').delete().eq('user_id', validatedUserId),
+        supabase.from('spouse_info').delete().eq('user_id', validatedUserId),
+        supabase.from('children').delete().eq('user_id', validatedUserId),
+        supabase.from('income').delete().eq('user_id', validatedUserId),
+        supabase.from('employers').delete().eq('user_id', validatedUserId),
+        supabase.from('expenses').delete().eq('user_id', validatedUserId),
+        supabase.from('assets').delete().eq('user_id', validatedUserId),
+        supabase.from('debts').delete().eq('user_id', validatedUserId),
+        supabase.from('marriage_info').delete().eq('user_id', validatedUserId),
+        supabase.from('court_info').delete().eq('user_id', validatedUserId),
       ])
       return
     }
@@ -859,23 +829,22 @@ export async function reAggregateFormDataFromDocuments(userId: string): Promise<
     if (dataError) throw dataError
 
     if (!extractedDataRecords || extractedDataRecords.length === 0) {
-      console.log('⚠️ No extracted data found')
+      logger.debug('No extracted data found')
       return
     }
 
     // Clear existing normalized data
-    console.log('🗑️ Clearing existing normalized data...')
     await Promise.all([
-      supabase.from('personal_info').delete().eq('user_id', userId),
-      supabase.from('spouse_info').delete().eq('user_id', userId),
-      supabase.from('children').delete().eq('user_id', userId),
-      supabase.from('income').delete().eq('user_id', userId),
-      supabase.from('employers').delete().eq('user_id', userId),
-      supabase.from('expenses').delete().eq('user_id', userId),
-      supabase.from('assets').delete().eq('user_id', userId),
-      supabase.from('debts').delete().eq('user_id', userId),
-      supabase.from('marriage_info').delete().eq('user_id', userId),
-      supabase.from('court_info').delete().eq('user_id', userId),
+      supabase.from('personal_info').delete().eq('user_id', validatedUserId),
+      supabase.from('spouse_info').delete().eq('user_id', validatedUserId),
+      supabase.from('children').delete().eq('user_id', validatedUserId),
+      supabase.from('income').delete().eq('user_id', validatedUserId),
+      supabase.from('employers').delete().eq('user_id', validatedUserId),
+      supabase.from('expenses').delete().eq('user_id', validatedUserId),
+      supabase.from('assets').delete().eq('user_id', validatedUserId),
+      supabase.from('debts').delete().eq('user_id', validatedUserId),
+      supabase.from('marriage_info').delete().eq('user_id', validatedUserId),
+      supabase.from('court_info').delete().eq('user_id', validatedUserId),
     ])
 
     // Re-migrate all extracted data (process in reverse order so newest overwrites oldest)
@@ -886,18 +855,17 @@ export async function reAggregateFormDataFromDocuments(userId: string): Promise<
       return 0 // We'll process in document upload order (newest first from query)
     })
 
-    console.log(`📊 Re-migrating ${sortedRecords.length} extracted data records...`)
+    logger.debug(`Re-migrating ${sortedRecords.length} extracted data records`)
     for (const record of sortedRecords.reverse()) { // Process oldest first, newest last (so newest overwrites)
       const doc = documents.find(d => d.id === record.document_id)
       if (doc && record.data) {
-        console.log(`🔄 Migrating data from document ${doc.document_type}...`)
-        await migrateFromExtractedData(userId, record.data, doc.document_type)
+        await migrateFromExtractedData(validatedUserId, record.data, doc.document_type)
       }
     }
 
-    console.log('✅ Re-aggregation complete')
+    logger.debug('Re-aggregation complete')
   } catch (error) {
-    console.error('❌ Error re-aggregating form data:', error)
+    logger.error('Error re-aggregating form data:', error)
     throw error
   }
 }
