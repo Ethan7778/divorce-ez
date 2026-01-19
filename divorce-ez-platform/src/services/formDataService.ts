@@ -345,106 +345,74 @@ export async function migrateFromExtractedData(
     // ========================================================================
     // Personal Info (Spouse 1)
     // ========================================================================
-    if (extractedData.firstName || extractedData.first_name || extractedData.fname) {
-      const personalInfoUpdates: Partial<PersonalInfoRow> = {}
+    // Always try to update personal info, even if firstName is missing
+    // This allows documents like marriage certificates to update other fields
+    const personalInfoUpdates: Partial<PersonalInfoRow> = {}
+    let hasPersonalInfoUpdates = false
 
-      if (!existingData.personal_info?.first_name) {
-        personalInfoUpdates.first_name = getValue(extractedData, 'firstName', 'first_name', 'fname') as string | null
-      }
-      if (!existingData.personal_info?.middle_name) {
-        personalInfoUpdates.middle_name = getValue(extractedData, 'middleName', 'middle_name', 'mname') as string | null
-      }
-      if (!existingData.personal_info?.last_name) {
-        personalInfoUpdates.last_name = getValue(extractedData, 'lastName', 'last_name', 'lname') as string | null
-      }
-      if (!existingData.personal_info?.date_of_birth) {
-        const dob = getValue(extractedData, 'dateOfBirth', 'dob', 'birthDate', 'birth_date')
-        personalInfoUpdates.date_of_birth = dob ? (typeof dob === 'string' ? dob : dob.toString()) : null
-      }
-      if (!existingData.personal_info?.ssn_last_4) {
-        const ssnFull = getValue(extractedData, 'ssn', 'socialSecurity', 'social_security')
-        const ssnLast4 = getValue(extractedData, 'ssnLast4', 'ssn_last_4')
-        if (ssnLast4) {
-          personalInfoUpdates.ssn_last_4 = ssnLast4 as string
-        } else if (ssnFull && typeof ssnFull === 'string') {
-          const cleaned = ssnFull.replace(/[^0-9]/g, '')
-          if (cleaned.length >= 4) {
-            personalInfoUpdates.ssn_last_4 = cleaned.slice(-4)
-          }
-        }
-      }
-      if (!existingData.personal_info?.driver_license_number) {
-        personalInfoUpdates.driver_license_number = getValue(
-          extractedData,
-          'licenseNumber',
-          'license_number',
-          'driverLicenseNumber',
-          'driver_license_number',
-          'dlNumber',
-          'dl_number'
-        ) as string | null
-      }
-      if (!existingData.personal_info?.driver_license_state) {
-        personalInfoUpdates.driver_license_state = getValue(
-          extractedData,
-          'licenseState',
-          'license_state',
-          'driverLicenseState',
-          'driver_license_state',
-          'dlState',
-          'dl_state'
-        ) as string | null
-      }
-      if (!existingData.personal_info?.address_street) {
-        const address = extractedData.address
-        if (address) {
-          if (typeof address === 'object') {
-            personalInfoUpdates.address_street = address.street || address.address || null
-            personalInfoUpdates.address_city = address.city || null
-            personalInfoUpdates.address_state = address.state || null
-            personalInfoUpdates.address_zip_code = address.zipCode || address.zip || null
-          } else if (typeof address === 'string') {
-            personalInfoUpdates.address_street = address
-          }
-        } else {
-          personalInfoUpdates.address_street = getValue(extractedData, 'street', 'streetAddress', 'street_address') as string | null
-        }
-      }
-      if (!existingData.personal_info?.address_city) {
-        personalInfoUpdates.address_city = getValue(extractedData, 'city') as string | null
-      }
-      if (!existingData.personal_info?.address_state) {
-        personalInfoUpdates.address_state = getValue(extractedData, 'state') as string | null
-      }
-      if (!existingData.personal_info?.address_zip_code) {
-        personalInfoUpdates.address_zip_code = getValue(
-          extractedData,
-          'zipCode',
-          'zip',
-          'zip_code',
-          'postalCode',
-          'postal_code'
-        ) as string | null
-      }
-      if (!existingData.personal_info?.email) {
-        personalInfoUpdates.email = getValue(extractedData, 'email', 'e-mail', 'e_mail') as string | null
-      }
-      if (!existingData.personal_info?.phone) {
-        personalInfoUpdates.phone = getValue(extractedData, 'phone', 'telephone', 'mobile', 'cell') as string | null
-      }
-      if (!existingData.personal_info?.filing_status) {
-        personalInfoUpdates.filing_status = getValue(extractedData, 'filingStatus', 'filing_status') as
-          | 'single'
-          | 'married_joint'
-          | 'married_separate'
-          | 'head_of_household'
-          | null
-      }
-
-      if (Object.keys(personalInfoUpdates).length > 0) {
-        await updatePersonalInfo(userId, personalInfoUpdates)
+    if (!existingData.personal_info?.first_name) {
+      const firstName = getValue(extractedData, 'firstName', 'first_name', 'fname')
+      if (firstName) {
+        personalInfoUpdates.first_name = firstName as string | null
+        hasPersonalInfoUpdates = true
       }
     }
+    if (!existingData.personal_info?.middle_name) {
+      const middleName = getValue(extractedData, 'middleName', 'middle_name', 'mname')
+      if (middleName) {
+        personalInfoUpdates.middle_name = middleName as string | null
+        hasPersonalInfoUpdates = true
+      }
+    }
+    if (!existingData.personal_info?.last_name) {
+      const lastName = getValue(extractedData, 'lastName', 'last_name', 'lname')
+      if (lastName) {
+        personalInfoUpdates.last_name = lastName as string | null
+        hasPersonalInfoUpdates = true
+      }
+    }
+      if (!existingData.personal_info?.address_zip_code) {
+        const zipCode = getValue(extractedData, 'zipCode', 'zip', 'zip_code', 'postalCode', 'postal_code')
+        if (zipCode) {
+          personalInfoUpdates.address_zip_code = zipCode as string | null
+          hasPersonalInfoUpdates = true
+        }
+      }
+      if (!existingData.personal_info?.email) {
+        const email = getValue(extractedData, 'email', 'e-mail', 'e_mail')
+        if (email) {
+          personalInfoUpdates.email = email as string | null
+          hasPersonalInfoUpdates = true
+        }
+      }
+      if (!existingData.personal_info?.phone) {
+        const phone = getValue(extractedData, 'phone', 'telephone', 'mobile', 'cell')
+        if (phone) {
+          personalInfoUpdates.phone = phone as string | null
+          hasPersonalInfoUpdates = true
+        }
+      }
+      if (!existingData.personal_info?.filing_status) {
+        const filingStatus = getValue(extractedData, 'filingStatus', 'filing_status')
+        if (filingStatus) {
+          personalInfoUpdates.filing_status = filingStatus as
+            | 'single'
+            | 'married_joint'
+            | 'married_separate'
+            | 'head_of_household'
+            | null
+          hasPersonalInfoUpdates = true
+        }
+      }
+
+      // Always update if we have any updates, or if we need to create a record
+      if (hasPersonalInfoUpdates || Object.keys(personalInfoUpdates).length > 0) {
+        console.log('💾 Updating personal_info with:', personalInfoUpdates)
+        await updatePersonalInfo(userId, personalInfoUpdates)
+        console.log('✅ Personal info updated successfully')
+      } else {
+        console.log('⚠️ No personal info updates to save')
+      }
 
     // ========================================================================
     // Spouse Info (Spouse 2) - from tax return or marriage certificate
