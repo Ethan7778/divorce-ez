@@ -3,10 +3,10 @@ import { useAuth } from '../../hooks/useAuth'
 import { useProgress } from '../../hooks/useProgress'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import DocumentUploadModule from './modules/DocumentUploadModule'
+import DocumentDropZone from '../../components/DocumentDropZone'
 import type { Document } from '../../types'
 
-type ModuleView = 'overview' | 'document' | 'personal' | 'financial' | 'review' | 'guidance' | 'checklist'
+type ModuleView = 'overview' | 'personal' | 'financial' | 'review' | 'guidance' | 'checklist'
 
 export default function Dashboard() {
   const { user, signOut } = useAuth()
@@ -62,12 +62,6 @@ export default function Dashboard() {
   }
 
   const modules = [
-    {
-      id: 'document' as ModuleView,
-      title: 'Document Upload',
-      description: 'Upload your financial documents and identification',
-      completed: progress.find((p) => p.module_name === 'module_document_upload')?.status === 'completed' || false,
-    },
     {
       id: 'personal' as ModuleView,
       title: 'Personal Information',
@@ -158,65 +152,37 @@ export default function Dashboard() {
             <div>
               <h1 className="text-2xl font-bold text-gray-900 mb-6">Home</h1>
               
-              {/* Document Checklist Section - Canvas style */}
-              <div className="mb-6 bg-white border border-gray-300 rounded">
-                <div className="border-b border-gray-300 bg-gray-50 px-4 py-3">
-                  <h2 className="text-base font-semibold text-gray-900">Required Documents</h2>
+              {/* Document Upload Section - Modern Drop Zones */}
+              <div className="mb-6">
+                <div className="mb-4">
+                  <h2 className="text-xl font-bold text-gray-900 mb-2">Upload Documents</h2>
+                  <p className="text-sm text-gray-600">
+                    Upload your documents below. Each document type has its own drop zone with helpful information.
+                  </p>
                 </div>
-                <div className="p-0">
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {[
-                    { type: 'taxReturn', label: 'Tax Return (1040 + schedules)', priority: 1, required: true, description: 'Anchor document - provides most comprehensive data' },
-                    { type: 'payStub', label: 'Pay Stub (last 1-2 months)', priority: 2, required: true, description: 'OR Profit & Loss if self-employed' },
-                    { type: 'profitAndLoss', label: 'Profit & Loss Statement', priority: 2, required: false, description: 'If self-employed (alternative to Pay Stub)' },
-                    { type: 'marriageCertificate', label: 'Marriage Certificate', priority: 3, required: true, description: 'Provides marriage date, place, and legal names' },
-                    { type: 'priorCourtOrder', label: 'Prior Court Order', priority: 4, required: false, description: 'If children exist - custody, support, or protective orders' },
-                    { type: 'bankStatement', label: 'Bank Statement (last 1-2 months)', priority: 5, required: false, description: 'Helps infer expenses and income patterns' },
-                  ].map((doc, idx) => {
+                    { type: 'taxReturn' as const, label: 'Tax Return (1040 + schedules)', priority: 1, required: true, description: 'Anchor document - provides most comprehensive data' },
+                    { type: 'payStub' as const, label: 'Pay Stub (last 1-2 months)', priority: 2, required: true, description: 'OR Profit & Loss if self-employed' },
+                    { type: 'profitAndLoss' as const, label: 'Profit & Loss Statement', priority: 2, required: false, description: 'If self-employed (alternative to Pay Stub)' },
+                    { type: 'marriageCertificate' as const, label: 'Marriage Certificate', priority: 3, required: true, description: 'Provides marriage date, place, and legal names' },
+                    { type: 'priorCourtOrder' as const, label: 'Prior Court Order', priority: 4, required: false, description: 'If children exist - custody, support, or protective orders' },
+                    { type: 'bankStatement' as const, label: 'Bank Statement (last 1-2 months)', priority: 5, required: false, description: 'Helps infer expenses and income patterns' },
+                  ].map((doc) => {
                     const status = getDocumentStatus(doc.type)
                     return (
-                      <div
+                      <DocumentDropZone
                         key={doc.type}
-                        className={`flex items-center px-4 py-3 hover:bg-gray-50 ${
-                          idx > 0 ? 'border-t border-gray-200' : ''
-                        }`}
-                      >
-                        <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center mr-3">
-                          {status.uploaded ? (
-                            <svg className="h-5 w-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                            </svg>
-                          ) : (
-                            <div className="w-4 h-4 border-2 border-gray-300 rounded"></div>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center flex-wrap gap-2">
-                            <span className="text-sm font-medium text-gray-900">{doc.label}</span>
-                            {doc.priority === 1 && (
-                              <span className="px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">
-                                Anchor
-                              </span>
-                            )}
-                            {doc.required && (
-                              <span className="text-xs text-red-600 font-medium">Required</span>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-500 mt-0.5">{doc.description}</p>
-                          {status.uploaded && status.date && (
-                            <p className="text-xs text-gray-400 mt-1">
-                              Uploaded {new Date(status.date).toLocaleDateString()}
-                            </p>
-                          )}
-                        </div>
-                        {!status.uploaded && (
-                          <button
-                            onClick={() => setActiveModule('document')}
-                            className="ml-4 px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded"
-                          >
-                            Upload
-                          </button>
-                        )}
-                      </div>
+                        documentType={doc.type}
+                        label={doc.label}
+                        description={doc.description}
+                        priority={doc.priority}
+                        required={doc.required}
+                        isUploaded={status.uploaded}
+                        uploadDate={status.date || undefined}
+                        onUploadComplete={fetchDocuments}
+                      />
                     )
                   })}
                 </div>
@@ -287,14 +253,6 @@ export default function Dashboard() {
                 Back to Home
               </button>
 
-              {activeModule === 'document' && (
-                <DocumentUploadModule 
-                  onComplete={() => { 
-                    setActiveModule('overview')
-                    fetchDocuments()
-                  }} 
-                />
-              )}
             </div>
           )}
         </main>
