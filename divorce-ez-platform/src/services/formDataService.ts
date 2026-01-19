@@ -376,65 +376,132 @@ export async function migrateFromExtractedData(
     // ========================================================================
     // Personal Info (Spouse 1)
     // ========================================================================
-    // Always try to update personal info, even if firstName is missing
-    // This allows documents like marriage certificates to update other fields
+    // Always replace fields when new data is available (user wants new uploads to replace old)
     const personalInfoUpdates: Partial<PersonalInfoRow> = {}
     let hasPersonalInfoUpdates = false
 
-    if (!existingData.personal_info?.first_name) {
-      const firstName = getValue(extractedData, 'firstName', 'first_name', 'fname')
-      if (firstName) {
+    // Extract firstName - handle both regex and Gemini formats
+    const firstName = getValue(extractedData, 'firstName', 'first_name', 'fname', 'employeeFullName')
+    if (firstName) {
+      // If employeeFullName, split it
+      if (firstName.includes(' ')) {
+        const nameParts = firstName.split(/\s+/)
+        personalInfoUpdates.first_name = nameParts[0]
+        if (nameParts.length > 2) {
+          personalInfoUpdates.middle_name = nameParts.slice(1, -1).join(' ')
+        }
+        personalInfoUpdates.last_name = nameParts[nameParts.length - 1]
+        hasPersonalInfoUpdates = true
+      } else {
         personalInfoUpdates.first_name = firstName as string | null
         hasPersonalInfoUpdates = true
       }
     }
-    if (!existingData.personal_info?.middle_name) {
-      const middleName = getValue(extractedData, 'middleName', 'middle_name', 'mname')
-      if (middleName) {
-        personalInfoUpdates.middle_name = middleName as string | null
+
+    // Extract middleName
+    const middleName = getValue(extractedData, 'middleName', 'middle_name', 'mname')
+    if (middleName) {
+      personalInfoUpdates.middle_name = middleName as string | null
+      hasPersonalInfoUpdates = true
+    }
+
+    // Extract lastName
+    const lastName = getValue(extractedData, 'lastName', 'last_name', 'lname')
+    if (lastName) {
+      personalInfoUpdates.last_name = lastName as string | null
+      hasPersonalInfoUpdates = true
+    }
+
+    // Extract date of birth - always replace if found
+    const dob = getValue(extractedData, 'dateOfBirth', 'dob', 'birthDate', 'birth_date')
+    if (dob) {
+      // Convert to ISO date format if needed
+      let dateStr = String(dob)
+      if (dateStr.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/)) {
+        const parts = dateStr.split(/[\/\-]/)
+        dateStr = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`
+      }
+      personalInfoUpdates.date_of_birth = dateStr
+      hasPersonalInfoUpdates = true
+    }
+
+    // Extract SSN - always replace if found
+    const ssn = getValue(extractedData, 'ssn', 'ssnLast4', 'socialSecurity', 'ssn_last_4')
+    if (ssn) {
+      const ssnStr = String(ssn).replace(/[^\d]/g, '')
+      if (ssnStr.length >= 4) {
+        personalInfoUpdates.ssn_last_4 = ssnStr.slice(-4) // Only store last 4
         hasPersonalInfoUpdates = true
       }
     }
-    if (!existingData.personal_info?.last_name) {
-      const lastName = getValue(extractedData, 'lastName', 'last_name', 'lname')
-      if (lastName) {
-        personalInfoUpdates.last_name = lastName as string | null
-        hasPersonalInfoUpdates = true
+
+    // Extract driver license - always replace if found
+    const licenseNumber = getValue(extractedData, 'licenseNumber', 'driverLicenseNumber', 'dl_number')
+    if (licenseNumber) {
+      personalInfoUpdates.driver_license_number = String(licenseNumber)
+      hasPersonalInfoUpdates = true
+    }
+    const licenseState = getValue(extractedData, 'licenseState', 'driverLicenseState', 'dl_state')
+    if (licenseState) {
+      personalInfoUpdates.driver_license_state = String(licenseState).toUpperCase().slice(0, 2)
+      hasPersonalInfoUpdates = true
+    }
+
+    // Extract address - always replace if found
+    if (extractedData.address) {
+      const address = extractedData.address
+      if (typeof address === 'object' && address !== null) {
+        if (address.street) {
+          personalInfoUpdates.address_street = String(address.street)
+          hasPersonalInfoUpdates = true
+        }
+        if (address.city) {
+          personalInfoUpdates.address_city = String(address.city)
+          hasPersonalInfoUpdates = true
+        }
+        if (address.state) {
+          personalInfoUpdates.address_state = String(address.state).toUpperCase().slice(0, 2)
+          hasPersonalInfoUpdates = true
+        }
+        if (address.zipCode || address.zip) {
+          personalInfoUpdates.address_zip_code = String(address.zipCode || address.zip)
+          hasPersonalInfoUpdates = true
+        }
       }
     }
-      if (!existingData.personal_info?.address_zip_code) {
-        const zipCode = getValue(extractedData, 'zipCode', 'zip', 'zip_code', 'postalCode', 'postal_code')
-        if (zipCode) {
-          personalInfoUpdates.address_zip_code = zipCode as string | null
-          hasPersonalInfoUpdates = true
-        }
-      }
-      if (!existingData.personal_info?.email) {
-        const email = getValue(extractedData, 'email', 'e-mail', 'e_mail')
-        if (email) {
-          personalInfoUpdates.email = email as string | null
-          hasPersonalInfoUpdates = true
-        }
-      }
-      if (!existingData.personal_info?.phone) {
-        const phone = getValue(extractedData, 'phone', 'telephone', 'mobile', 'cell')
-        if (phone) {
-          personalInfoUpdates.phone = phone as string | null
-          hasPersonalInfoUpdates = true
-        }
-      }
-      if (!existingData.personal_info?.filing_status) {
-        const filingStatus = getValue(extractedData, 'filingStatus', 'filing_status')
-        if (filingStatus) {
-          personalInfoUpdates.filing_status = filingStatus as
-            | 'single'
-            | 'married_joint'
-            | 'married_separate'
-            | 'head_of_household'
-            | null
-          hasPersonalInfoUpdates = true
-        }
-      }
+
+    // Extract zip code separately if address object not found
+    const zipCode = getValue(extractedData, 'zipCode', 'zip', 'zip_code', 'postalCode', 'postal_code')
+    if (zipCode && !personalInfoUpdates.address_zip_code) {
+      personalInfoUpdates.address_zip_code = zipCode as string | null
+      hasPersonalInfoUpdates = true
+    }
+
+    // Extract email - always replace if found
+    const email = getValue(extractedData, 'email', 'e-mail', 'e_mail')
+    if (email) {
+      personalInfoUpdates.email = email as string | null
+      hasPersonalInfoUpdates = true
+    }
+
+    // Extract phone - always replace if found
+    const phone = getValue(extractedData, 'phone', 'telephone', 'mobile', 'cell')
+    if (phone) {
+      personalInfoUpdates.phone = phone as string | null
+      hasPersonalInfoUpdates = true
+    }
+
+    // Extract filing status - always replace if found
+    const filingStatus = getValue(extractedData, 'filingStatus', 'filing_status')
+    if (filingStatus) {
+      personalInfoUpdates.filing_status = filingStatus as
+        | 'single'
+        | 'married_joint'
+        | 'married_separate'
+        | 'head_of_household'
+        | null
+      hasPersonalInfoUpdates = true
+    }
 
       // Check if we have ANY extracted data that could be personal info
       const hasAnyPersonalData = 
@@ -467,15 +534,32 @@ export async function migrateFromExtractedData(
     // ========================================================================
     // Spouse Info (Spouse 2) - from tax return or marriage certificate
     // ========================================================================
+    // Handle Gemini format: spouse1FullName, spouse2FullName
+    const spouse1FullName = getValue(extractedData, 'spouse1FullName', 'spouse1_full_name')
+    const spouse2FullName = getValue(extractedData, 'spouse2FullName', 'spouse2_full_name')
     const spouseName = getValue(extractedData, 'spouseName', 'spouse_name')
     const spouse2Name = getValue(extractedData, 'spouse2Name', 'spouse2_name', 'spouse2Name')
     const legalNamesAtMarriage = extractedData.legalNamesAtMarriage
 
-    if (spouseName || spouse2Name || legalNamesAtMarriage?.spouse2) {
-      const spouseNameToUse = spouseName || spouse2Name || legalNamesAtMarriage?.spouse2
+    // Determine which spouse name to use
+    let spouse2FullNameToUse = spouse2FullName || spouse2Name || legalNamesAtMarriage?.spouse2
+    
+    // If we have spouse1FullName but no spouse2, check if spouse1 is different from primary
+    if (spouse1FullName && !spouse2FullNameToUse) {
+      const primaryFullName = existingData.personal_info 
+        ? `${existingData.personal_info.first_name || ''} ${existingData.personal_info.last_name || ''}`.trim()
+        : ''
+      if (spouse1FullName !== primaryFullName) {
+        spouse2FullNameToUse = spouse1FullName
+      }
+    }
+
+    if (spouse2FullNameToUse || spouseName) {
+      const spouseNameToUse = spouse2FullNameToUse || spouseName || spouse2Name || legalNamesAtMarriage?.spouse2
       if (spouseNameToUse && typeof spouseNameToUse === 'string') {
         const nameParts = spouseNameToUse.trim().split(/\s+/)
-        if (nameParts.length >= 2 && !existingData.spouse_info?.first_name) {
+        if (nameParts.length >= 2) {
+          // Always replace spouse info when found
           await updateSpouseInfo(validatedUserId, {
             first_name: nameParts[0],
             last_name: nameParts.slice(1).join(' '),

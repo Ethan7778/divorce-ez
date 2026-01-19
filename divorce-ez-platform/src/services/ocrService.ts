@@ -738,6 +738,75 @@ function parseTaxReturn(text: string): Record<string, any> {
 function parsePayStub(text: string): Record<string, any> {
   const data: Record<string, any> = {}
 
+  // Extract employee name - look for "Employee Name:" followed by name
+  // Pattern: "Employee Name: John Doe" or "Employee Name John Doe"
+  const employeeNameMatch = text.match(/Employee\s+Name[\s:]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i)
+  if (employeeNameMatch) {
+    const fullName = employeeNameMatch[1].trim()
+    const nameParts = fullName.split(/\s+/)
+    if (nameParts.length >= 2) {
+      data.firstName = nameParts[0]
+      data.lastName = nameParts[nameParts.length - 1]
+      if (nameParts.length > 2) {
+        data.middleName = nameParts.slice(1, -1).join(' ')
+      }
+      data.employeeFullName = fullName
+    }
+  }
+
+  // Fallback: Look for name pattern near "Employee ID" or "Social Security"
+  if (!data.firstName) {
+    const nameNearIdMatch = text.match(/(?:Employee\s+Name|Name)[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s+Employee\s+ID|Social\s+Security)/i)
+    if (nameNearIdMatch) {
+      const fullName = nameNearIdMatch[1].trim()
+      const nameParts = fullName.split(/\s+/)
+      if (nameParts.length >= 2) {
+        data.firstName = nameParts[0]
+        data.lastName = nameParts[nameParts.length - 1]
+        if (nameParts.length > 2) {
+          data.middleName = nameParts.slice(1, -1).join(' ')
+        }
+        data.employeeFullName = fullName
+      }
+    }
+  }
+
+  // Extract Social Security Number
+  // Pattern: "Social Security: 111-22-3333" or "SSN: 111-22-3333"
+  const ssnMatch = text.match(/(?:Social\s+Security|SSN|SOCIAL\s+SECURITY\s+#)[\s:]*(\d{3}[-.\s]?\d{2}[-.\s]?\d{4})/i)
+  if (ssnMatch) {
+    const ssn = ssnMatch[1].replace(/[-.\s]/g, '')
+    if (ssn.length === 9) {
+      data.ssn = ssn
+      data.ssnLast4 = ssn.slice(-4)
+    }
+  }
+
+  // Extract address - look for street address pattern
+  // Pattern: "123 Fake Street" or "123 Fake Street, Anytown, USA 12345"
+  const addressMatch = text.match(/(\d+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*(?:\s+Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Lane|Ln|Boulevard|Blvd|Court|Ct|Place|Pl))(?:\s*,\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*))?(?:\s*,\s*([A-Z]{2}))?(?:\s+(\d{5}(?:-\d{4})?))?/i)
+  if (addressMatch) {
+    data.address = {
+      street: addressMatch[1].trim(),
+      city: addressMatch[2]?.trim() || null,
+      state: addressMatch[3]?.trim() || null,
+      zipCode: addressMatch[4]?.trim() || null,
+    }
+  }
+
+  // Fallback: Look for address on its own line (common in pay stubs)
+  if (!data.address) {
+    const addressLineMatch = text.match(/(\d+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*\n\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*),\s*([A-Z]{2})\s+(\d{5})/i)
+    if (addressLineMatch) {
+      data.address = {
+        street: addressLineMatch[1].trim(),
+        city: addressLineMatch[2].trim(),
+        state: addressLineMatch[3].trim(),
+        zipCode: addressLineMatch[4].trim(),
+      }
+    }
+  }
+
   // Extract employer name (usually in header)
   const employerMatch = text.match(/(?:EMPLOYER|COMPANY|EMPLOYER\s+NAME)[\s:]*([A-Z][A-Z\s,&\.]+)/i)
   if (employerMatch) {
@@ -969,46 +1038,114 @@ function parseBankStatement(text: string): Record<string, any> {
 function parseMarriageCertificate(text: string): Record<string, any> {
   const data: Record<string, any> = {}
 
-  // Extract spouse 1 name (groom/bride)
-  const spouse1Match = text.match(/(?:GROOM|BRIDE|PARTY\s+1|SPOUSE\s+1)[\s:]*([A-Z][A-Z\s,]+)/i)
-  if (spouse1Match) {
-    data.spouse1Name = spouse1Match[1].trim()
-  }
+  // Extract spouse names - look for "were united" or "This certifies that"
+  // Pattern: "John Doe wd Fane Smith" or "John Doe and Jane Smith"
+  const spouseNamesMatch = text.match(/(?:This\s+Certifies\s+That|were\s+united|UNITED)[\s\w]*:?\s*([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(?:and|wd|&)\s+([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i)
+  if (spouseNamesMatch) {
+    const spouse1Full = spouseNamesMatch[1].trim()
+    const spouse2Full = spouseNamesMatch[2].trim()
+    
+    data.spouse1FullName = spouse1Full
+    data.spouse2FullName = spouse2Full
+    data.spouse1Name = spouse1Full
+    data.spouse2Name = spouse2Full
+    
+    // Also extract as individual names for migration
+    const spouse1Parts = spouse1Full.split(/\s+/)
+    const spouse2Parts = spouse2Full.split(/\s+/)
+    
+    if (spouse1Parts.length >= 2) {
+      data.spouse1FirstName = spouse1Parts[0]
+      data.spouse1LastName = spouse1Parts[spouse1Parts.length - 1]
+    }
+    if (spouse2Parts.length >= 2) {
+      data.spouse2FirstName = spouse2Parts[0]
+      data.spouse2LastName = spouse2Parts[spouse2Parts.length - 1]
+    }
 
-  // Extract spouse 2 name
-  const spouse2Match = text.match(/(?:GROOM|BRIDE|PARTY\s+2|SPOUSE\s+2)[\s:]*([A-Z][A-Z\s,]+)/i)
-  if (spouse2Match) {
-    data.spouse2Name = spouse2Match[1].trim()
-  }
-
-  // Extract legal names at marriage
-  if (data.spouse1Name && data.spouse2Name) {
+    // Extract legal names at marriage
     data.legalNamesAtMarriage = {
-      spouse1: data.spouse1Name,
-      spouse2: data.spouse2Name,
+      spouse1: spouse1Full,
+      spouse2: spouse2Full,
     }
   }
 
-  // Extract marriage date
-  const dateMatch = text.match(/(?:DATE\s+OF\s+MARRIAGE|MARRIAGE\s+DATE|MARRIED)[\s:]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i)
-  if (dateMatch) {
-    data.marriageDate = dateMatch[1].trim()
+  // Fallback: Extract spouse 1 name (groom/bride)
+  if (!data.spouse1Name) {
+    const spouse1Match = text.match(/(?:GROOM|BRIDE|PARTY\s+1|SPOUSE\s+1)[\s:]*([A-Z][A-Z\s,]+)/i)
+    if (spouse1Match) {
+      data.spouse1Name = spouse1Match[1].trim()
+      data.spouse1FullName = spouse1Match[1].trim()
+    }
   }
 
-  // Extract place of marriage (city, county, state)
-  const placeMatch = text.match(/(?:PLACE\s+OF\s+MARRIAGE|MARRIED\s+AT|CITY|COUNTY)[\s:]*([A-Z][A-Z\s,]+(?:COUNTY|CITY|STATE)?)/i)
+  // Fallback: Extract spouse 2 name
+  if (!data.spouse2Name) {
+    const spouse2Match = text.match(/(?:GROOM|BRIDE|PARTY\s+2|SPOUSE\s+2)[\s:]*([A-Z][A-Z\s,]+)/i)
+    if (spouse2Match) {
+      data.spouse2Name = spouse2Match[1].trim()
+      data.spouse2FullName = spouse2Match[1].trim()
+    }
+  }
+
+  // Extract marriage date - multiple patterns
+  // Pattern 1: "on the 14th day of June, 2023" or "on the 14% day of June, 2023" (OCR error)
+  let dateMatch = text.match(/(?:on\s+the|ON\s+THE)\s+(\d{1,2})(?:st|nd|rd|th|%)?\s+day\s+of\s+([A-Za-z]+)[\s,]+(\d{4})/i)
+  if (dateMatch) {
+    const day = dateMatch[1].padStart(2, '0')
+    const monthName = dateMatch[2]
+    const year = dateMatch[3]
+    
+    const months: Record<string, string> = {
+      'january': '01', 'february': '02', 'march': '03', 'april': '04',
+      'may': '05', 'june': '06', 'july': '07', 'august': '08',
+      'september': '09', 'october': '10', 'november': '11', 'december': '12'
+    }
+    const month = months[monthName.toLowerCase()] || '01'
+    
+    data.marriageDate = `${year}-${month}-${day}`
+  }
+
+  // Pattern 2: "MM/DD/YYYY" or "MM-DD-YYYY"
+  if (!data.marriageDate) {
+    dateMatch = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/)
+    if (dateMatch) {
+      const month = dateMatch[1].padStart(2, '0')
+      const day = dateMatch[2].padStart(2, '0')
+      const year = dateMatch[3]
+      data.marriageDate = `${year}-${month}-${day}`
+    }
+  }
+
+  // Pattern 3: "DATE OF MARRIAGE" format
+  if (!data.marriageDate) {
+    dateMatch = text.match(/(?:DATE\s+OF\s+MARRIAGE|MARRIAGE\s+DATE|MARRIED)[\s:]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i)
+    if (dateMatch) {
+      const dateStr = dateMatch[1].trim()
+      const parts = dateStr.split(/[\/\-]/)
+      if (parts.length === 3) {
+        const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2]
+        data.marriageDate = `${year}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`
+      }
+    }
+  }
+
+  // Extract place of marriage - look for "At:" or "City:"
+  const placeMatch = text.match(/(?:At|CITY|PLACE|City)[\s:]*([A-Z][A-Za-z\s,]+)/i)
   if (placeMatch) {
     data.marriagePlace = placeMatch[1].trim()
   }
 
-  // Extract maiden name (often mentioned for bride)
-  const maidenNameMatch = text.match(/(?:MAIDEN\s+NAME|FORMER\s+NAME)[\s:]*([A-Z][A-Z\s,]+)/i)
-  if (maidenNameMatch) {
-    data.maidenNames = [maidenNameMatch[1].trim()]
+  // Fallback: Extract place of marriage (city, county, state)
+  if (!data.marriagePlace) {
+    const placeMatch2 = text.match(/(?:PLACE\s+OF\s+MARRIAGE|MARRIED\s+AT|CITY|COUNTY)[\s:]*([A-Z][A-Z\s,]+(?:COUNTY|CITY|STATE)?)/i)
+    if (placeMatch2) {
+      data.marriagePlace = placeMatch2[1].trim()
+    }
   }
 
-  // Extract certificate number
-  const certMatch = text.match(/(?:CERTIFICATE\s+NUMBER|CERT\s+#|LICENSE\s+#)[\s:]*([A-Z0-9]+)/i)
+  // Extract certificate number if present
+  const certMatch = text.match(/(?:CERTIFICATE|LICENSE)\s+(?:NUMBER|#|NO\.?)[\s:]*([A-Z0-9\-]+)/i)
   if (certMatch) {
     data.certificateNumber = certMatch[1].trim()
   }
