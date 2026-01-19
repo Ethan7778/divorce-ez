@@ -44,6 +44,14 @@ window.addEventListener('popstate', () => {
  * Try to initialize auto-fill with retry logic
  */
 function tryInitAutoFill() {
+  // Check if UI already exists - if so, just update data, don't recreate
+  const existingUI = document.getElementById('divorce-ez-autofill-ui');
+  if (existingUI && isInitialized) {
+    // UI already exists, just update data
+    setupAutoFill();
+    return;
+  }
+
   if (isInitialized) {
     // Already initialized, just update
     setupAutoFill();
@@ -291,7 +299,11 @@ function createAutoFillUI(data, errorMessage = null) {
       if (response && response.success && response.data) {
         currentData = response.data;
         // Clear filled fields tracking when manually filling
-        filledFields.clear();
+        if (!filledFields || !(filledFields instanceof Set)) {
+          filledFields = new Set();
+        } else {
+          filledFields.clear();
+        }
         fillForms(response.data);
         status.textContent = 'Forms filled!';
         status.style.color = '#4CAF50';
@@ -324,7 +336,12 @@ function createAutoFillUI(data, errorMessage = null) {
   `;
   clearButton.onclick = () => {
     clearAllFields();
-    filledFields.clear(); // Clear tracking when clearing fields
+    // Clear tracking when clearing fields
+    if (!filledFields || !(filledFields instanceof Set)) {
+      filledFields = new Set();
+    } else {
+      filledFields.clear();
+    }
     status.textContent = 'Fields cleared';
     status.style.color = '#f44336';
   };
@@ -405,8 +422,14 @@ function fillForms(data) {
     incomeKeys: data.financial_info && data.financial_info.income ? Object.keys(data.financial_info.income) : []
   });
 
+  // Ensure filledFields is a Set (in case it got reset somehow)
+  if (!(filledFields instanceof Set)) {
+    console.warn('⚠️ filledFields was not a Set, reinitializing...');
+    filledFields = new Set();
+  }
+
   let filledCount = 0;
-  const filledFields = [];
+  const filledFieldsLog = []; // For logging only, not for tracking
 
   // Find all forms
   const forms = document.querySelectorAll('form');
@@ -437,6 +460,11 @@ function fillForms(data) {
           
           // Track filled fields for debugging
           const fieldIdentifier = fieldName.name || fieldName.id || fieldName.label || 'unknown';
+          filledFieldsLog.push({
+            field: fieldIdentifier,
+            value: value,
+            type: input.type
+          });
           console.log(`✅ Filled field: ${fieldIdentifier} = ${value} (type: ${input.type})`);
           
           // Add visual indicator
@@ -483,7 +511,7 @@ function fillForms(data) {
   });
 
   // Log summary
-  console.log(`📊 Auto-fill complete: Filled ${filledCount} field(s)`, filledFields);
+  console.log(`📊 Auto-fill complete: Filled ${filledCount} field(s)`, filledFieldsLog);
 
   // Update status
   const status = document.getElementById('divorce-ez-status');

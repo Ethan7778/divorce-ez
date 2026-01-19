@@ -79,15 +79,19 @@ async function getDataWithFallback() {
       try {
         const formData = await apiService.getUserFormData();
         if (formData) {
-          // Cache in local storage
+          // Cache in local storage (include all data for extension)
           await storageManager.saveData({
             personal_info: formData.personal_info || {},
             financial_info: formData.financial_info || {},
+            marriage_info: formData.marriage_info || {},
+            court_info: formData.court_info || {},
             synced: true,
           });
           return {
             personal_info: formData.personal_info || {},
             financial_info: formData.financial_info || {},
+            marriage_info: formData.marriage_info || {},
+            court_info: formData.court_info || {},
             synced: true,
           };
         }
@@ -127,6 +131,8 @@ async function syncFromPlatform() {
       const dataToSave = {
         personal_info: formData.personal_info || {},
         financial_info: formData.financial_info || {},
+        marriage_info: formData.marriage_info || {},
+        court_info: formData.court_info || {},
         synced: true,
         syncedAt: new Date().toISOString(),
       };

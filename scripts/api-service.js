@@ -114,7 +114,7 @@ class ApiService {
 
   /**
    * Get user's form data from platform
-   * For now, we'll query Supabase directly since Edge Function doesn't exist yet
+   * Queries normalized tables and aggregates into backward-compatible format
    */
   async getUserFormData() {
     try {
@@ -133,189 +133,156 @@ class ApiService {
         throw new Error('Could not get user ID')
       }
 
-      // First, try to get from form_data table
-      const formDataResponse = await fetch(
-        `${supabaseUrl}/rest/v1/form_data?user_id=eq.${user.id}&select=*`,
-        {
-          method: 'GET',
-          headers: {
-            'apikey': supabaseKey,
-            'Authorization': `Bearer ${this.accessToken}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          }
-        }
-      )
-
-      if (formDataResponse.ok) {
-        const formDataArray = await formDataResponse.json()
-        if (formDataArray && formDataArray.length > 0) {
-          const formData = {
-            personal_info: formDataArray[0].personal_info || {},
-            financial_info: formDataArray[0].financial_info || {},
-            marriage_info: formDataArray[0].marriage_info || {},
-            court_info: formDataArray[0].court_info || {}
-          }
-          
-          // Log data structure for debugging
-          console.log('📊 Fetched form_data structure:', {
-            hasPersonalInfo: !!formData.personal_info,
-            hasFinancialInfo: !!formData.financial_info,
-            hasMarriageInfo: !!formData.marriage_info,
-            hasCourtInfo: !!formData.court_info,
-            personalInfoKeys: Object.keys(formData.personal_info),
-            financialInfoKeys: Object.keys(formData.financial_info),
-            hasIncome: !!formData.financial_info.income,
-            incomeKeys: formData.financial_info.income ? Object.keys(formData.financial_info.income) : []
-          })
-          
-          return formData
-        }
+      const headers = {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
       }
 
-      // If no form_data, aggregate from extracted_data via documents
-      // First get documents
-      const documentsResponse = await fetch(
-        `${supabaseUrl}/rest/v1/documents?user_id=eq.${user.id}&select=id`,
-        {
-          method: 'GET',
-          headers: {
-            'apikey': supabaseKey,
-            'Authorization': `Bearer ${this.accessToken}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          }
-        }
-      )
+      // Query all normalized tables in parallel
+      const [
+        personalInfoRes,
+        spouseInfoRes,
+        childrenRes,
+        incomeRes,
+        employersRes,
+        expensesRes,
+        assetsRes,
+        debtsRes,
+        marriageInfoRes,
+        courtInfoRes
+      ] = await Promise.all([
+        fetch(`${supabaseUrl}/rest/v1/personal_info?user_id=eq.${user.id}&select=*`, { method: 'GET', headers }),
+        fetch(`${supabaseUrl}/rest/v1/spouse_info?user_id=eq.${user.id}&select=*`, { method: 'GET', headers }),
+        fetch(`${supabaseUrl}/rest/v1/children?user_id=eq.${user.id}&select=*`, { method: 'GET', headers }),
+        fetch(`${supabaseUrl}/rest/v1/income?user_id=eq.${user.id}&select=*&order=spouse_number`, { method: 'GET', headers }),
+        fetch(`${supabaseUrl}/rest/v1/employers?user_id=eq.${user.id}&select=*`, { method: 'GET', headers }),
+        fetch(`${supabaseUrl}/rest/v1/expenses?user_id=eq.${user.id}&select=*&order=spouse_number`, { method: 'GET', headers }),
+        fetch(`${supabaseUrl}/rest/v1/assets?user_id=eq.${user.id}&select=*`, { method: 'GET', headers }),
+        fetch(`${supabaseUrl}/rest/v1/debts?user_id=eq.${user.id}&select=*`, { method: 'GET', headers }),
+        fetch(`${supabaseUrl}/rest/v1/marriage_info?user_id=eq.${user.id}&select=*`, { method: 'GET', headers }),
+        fetch(`${supabaseUrl}/rest/v1/court_info?user_id=eq.${user.id}&select=*`, { method: 'GET', headers })
+      ])
 
-      if (documentsResponse.ok) {
-        const documents = await documentsResponse.json()
-        const personalInfo = {}
-        const financialInfo = { income: {} } // Ensure income object exists
+      // Parse responses
+      const personalInfo = personalInfoRes.ok ? (await personalInfoRes.json())[0] : null
+      const spouseInfo = spouseInfoRes.ok ? (await spouseInfoRes.json())[0] : null
+      const children = childrenRes.ok ? await childrenRes.json() : []
+      const income = incomeRes.ok ? await incomeRes.json() : []
+      const employers = employersRes.ok ? await employersRes.json() : []
+      const expenses = expensesRes.ok ? await expensesRes.json() : []
+      const assets = assetsRes.ok ? await assetsRes.json() : []
+      const debts = debtsRes.ok ? await debtsRes.json() : []
+      const marriageInfo = marriageInfoRes.ok ? (await marriageInfoRes.json())[0] : null
+      const courtInfo = courtInfoRes.ok ? (await courtInfoRes.json())[0] : null
 
-        // Get extracted data for each document
-        for (const doc of documents) {
-          const extractedDataResponse = await fetch(
-            `${supabaseUrl}/rest/v1/extracted_data?document_id=eq.${doc.id}&select=data`,
-            {
-              method: 'GET',
-              headers: {
-                'apikey': supabaseKey,
-                'Authorization': `Bearer ${this.accessToken}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation'
-              }
-            }
-          )
-          
-          if (extractedDataResponse.ok) {
-            const extractedDataArray = await extractedDataResponse.json()
-            if (extractedDataArray && extractedDataArray.length > 0) {
-              const extracted = extractedDataArray[0].data
-              
-              // Helper function to get value with fallback options
-              const getValue = (obj, ...keys) => {
-                for (const key of keys) {
-                  if (obj[key] != null && obj[key] !== '') return obj[key]
-                }
-                return null
-              }
-              
-              // Merge personal info - handle field name variations
-              if (!personalInfo.firstName) personalInfo.firstName = getValue(extracted, 'firstName', 'first_name', 'fname')
-              if (!personalInfo.lastName) personalInfo.lastName = getValue(extracted, 'lastName', 'last_name', 'lname')
-              if (!personalInfo.fullName) personalInfo.fullName = getValue(extracted, 'fullName', 'full_name', 'name')
-              if (!personalInfo.dateOfBirth) personalInfo.dateOfBirth = getValue(extracted, 'dateOfBirth', 'dob', 'birthDate', 'birth_date')
-              if (!personalInfo.ssn) personalInfo.ssn = getValue(extracted, 'ssn', 'socialSecurity', 'social_security')
-              if (!personalInfo.licenseNumber) personalInfo.licenseNumber = getValue(extracted, 'licenseNumber', 'license_number', 'driverLicenseNumber', 'driver_license_number', 'dlNumber', 'dl_number')
-              
-              // Handle address - can be string or object
-              if (!personalInfo.address) {
-                const addressStr = getValue(extracted, 'address', 'street', 'streetAddress', 'street_address')
-                const addressObj = extracted.address
-                if (addressStr && typeof addressStr === 'string') {
-                  personalInfo.address = addressStr
-                } else if (addressObj && typeof addressObj === 'object') {
-                  personalInfo.address = addressObj.street || addressObj.address || ''
-                }
-              }
-              if (!personalInfo.city) personalInfo.city = getValue(extracted, 'city')
-              if (!personalInfo.state) personalInfo.state = getValue(extracted, 'state')
-              if (!personalInfo.zipCode) personalInfo.zipCode = getValue(extracted, 'zipCode', 'zip', 'zip_code', 'postalCode', 'postal_code')
-              
-              // Merge financial info - handle field name variations
-              // Ensure income object exists
-              if (!financialInfo.income) financialInfo.income = {}
-              
-              // Income fields
-              if (!financialInfo.income.annual) {
-                financialInfo.income.annual = getValue(extracted, 'annualIncome', 'annual_income', 'totalIncome', 'total_income', 'adjustedGrossIncome', 'adjusted_gross_income', 'agi', 'AGI')
-              }
-              if (!financialInfo.income.monthly) {
-                financialInfo.income.monthly = getValue(extracted, 'monthlyIncome', 'monthly_income', 'grossPay', 'gross_pay', 'gross')
-              }
-              if (!financialInfo.income.wage) {
-                financialInfo.income.wage = getValue(extracted, 'wageIncome', 'wage_income', 'wages', 'wage', 'compensation', 'salary')
-              }
-              if (!financialInfo.income.totalIncome) {
-                financialInfo.income.totalIncome = getValue(extracted, 'totalIncome', 'total_income')
-              }
-              if (!financialInfo.income.adjustedGrossIncome) {
-                financialInfo.income.adjustedGrossIncome = getValue(extracted, 'adjustedGrossIncome', 'adjusted_gross_income', 'agi', 'AGI')
-              }
-              if (!financialInfo.income.selfEmployment) {
-                financialInfo.income.selfEmployment = getValue(extracted, 'selfEmploymentIncome', 'self_employment_income', 'netIncome')
-              }
-              if (!financialInfo.income.rental) {
-                financialInfo.income.rental = getValue(extracted, 'rentalIncome', 'rental_income')
-              }
-              
-              // Other financial fields
-              if (!financialInfo.employers) {
-                const employers = extracted.employers
-                if (Array.isArray(employers) && employers.length > 0) {
-                  financialInfo.employers = employers
-                } else {
-                  const employerName = getValue(extracted, 'employerName', 'employer_name', 'employer', 'company', 'companyName', 'company_name')
-                  if (employerName) {
-                    financialInfo.employers = [{ name: employerName }]
-                  }
-                }
-              }
-              if (!financialInfo.bankName) financialInfo.bankName = getValue(extracted, 'bankName', 'bank_name', 'bank', 'financialInstitution', 'financial_institution')
-              if (!financialInfo.accountNumber) financialInfo.accountNumber = getValue(extracted, 'accountNumber', 'account_number', 'acctNumber', 'acct_number')
-              if (!financialInfo.balance) financialInfo.balance = getValue(extracted, 'balance', 'accountBalance', 'account_balance', 'currentBalance', 'current_balance')
-            }
-          }
-        }
+      // Get income for spouse 1 (primary)
+      const spouse1Income = income.find(i => i.spouse_number === 1) || {}
+      const spouse1Expenses = expenses.find(e => e.spouse_number === 1) || {}
 
-        const fallbackData = {
-          personal_info: personalInfo,
-          financial_info: financialInfo,
-          marriage_info: {},
-          court_info: {}
-        }
-        
-        // Log fallback data structure for debugging
-        console.log('📊 Aggregated data from extracted_data (fallback):', {
-          hasPersonalInfo: !!fallbackData.personal_info,
-          hasFinancialInfo: !!fallbackData.financial_info,
-          personalInfoKeys: Object.keys(fallbackData.personal_info),
-          financialInfoKeys: Object.keys(fallbackData.financial_info),
-          hasIncome: !!fallbackData.financial_info.income,
-          incomeKeys: fallbackData.financial_info.income ? Object.keys(fallbackData.financial_info.income) : []
-        })
-        
-        return fallbackData
+      // Aggregate into backward-compatible format
+      const formData = {
+        personal_info: personalInfo ? {
+          firstName: personalInfo.first_name,
+          lastName: personalInfo.last_name,
+          middleName: personalInfo.middle_name,
+          dateOfBirth: personalInfo.date_of_birth,
+          ssnLast4: personalInfo.ssn_last_4,
+          driverLicenseNumber: personalInfo.driver_license_number,
+          driverLicenseState: personalInfo.driver_license_state,
+          address: {
+            street: personalInfo.address_street,
+            city: personalInfo.address_city,
+            state: personalInfo.address_state,
+            zipCode: personalInfo.address_zip_code
+          },
+          email: personalInfo.email,
+          phone: personalInfo.phone,
+          filingStatus: personalInfo.filing_status,
+          spouseName: spouseInfo ? `${spouseInfo.first_name || ''} ${spouseInfo.last_name || ''}`.trim() : null,
+          dependents: children.map(c => ({
+            name: c.full_name,
+            dateOfBirth: c.date_of_birth
+          }))
+        } : {},
+        financial_info: {
+          income: {
+            monthly: spouse1Income.gross_monthly_income,
+            annual: spouse1Income.gross_annual_income,
+            wage: spouse1Income.wage_income,
+            selfEmployment: spouse1Income.self_employment_income,
+            investment: spouse1Income.investment_income,
+            rental: spouse1Income.rental_income,
+            totalIncome: spouse1Income.total_income,
+            adjustedGrossIncome: spouse1Income.adjusted_gross_income,
+            payFrequency: spouse1Income.pay_frequency,
+            sources: []
+          },
+          employers: employers.filter(e => e.spouse_number === 1).map(e => ({
+            name: e.employer_name,
+            income: e.income_amount,
+            incomeType: e.income_type
+          })),
+          expenses: {
+            housing: spouse1Expenses.monthly_housing_cost,
+            utilities: spouse1Expenses.monthly_utilities,
+            childcare: spouse1Expenses.monthly_childcare_cost,
+            debt: spouse1Expenses.monthly_debt_payments,
+            transportation: spouse1Expenses.monthly_transportation
+          },
+          insurance: {
+            health: spouse1Expenses.monthly_health_insurance,
+            premiums: spouse1Expenses.monthly_insurance_premiums
+          },
+          payrollDeductions: spouse1Expenses.monthly_payroll_deductions,
+          overtime: spouse1Income.overtime,
+          bonuses: spouse1Income.bonuses,
+          assets: assets.map(a => ({
+            type: a.asset_type,
+            value: a.approximate_value
+          })),
+          debts: debts.map(d => ({
+            type: d.debt_type,
+            amount: d.approximate_balance
+          })),
+          bankAccounts: assets.filter(a => a.asset_type === 'bank_account').map(a => ({
+            bankName: a.bank_name,
+            accountNumber: a.account_number,
+            balance: a.approximate_value
+          }))
+        },
+        marriage_info: marriageInfo ? {
+          marriageDate: marriageInfo.marriage_date,
+          marriagePlace: marriageInfo.marriage_place,
+          legalNamesAtMarriage: {
+            spouse1: marriageInfo.spouse1_name_at_marriage,
+            spouse2: marriageInfo.spouse2_name_at_marriage
+          },
+          maidenNames: marriageInfo.maiden_names || []
+        } : {},
+        court_info: courtInfo ? {
+          hasPriorOrders: courtInfo.has_prior_orders,
+          orderTypes: courtInfo.order_types || [],
+          jurisdictions: courtInfo.jurisdictions || [],
+          custodyConstraints: courtInfo.custody_constraints || [],
+          hasDomesticViolence: courtInfo.has_domestic_violence
+        } : {}
       }
 
-      // Return empty if nothing found (but ensure income object exists)
-      return {
-        personal_info: {},
-        financial_info: { income: {} },
-        marriage_info: {},
-        court_info: {}
-      }
+      // Log data structure for debugging
+      console.log('📊 Fetched normalized data structure:', {
+        hasPersonalInfo: !!formData.personal_info && Object.keys(formData.personal_info).length > 0,
+        hasFinancialInfo: !!formData.financial_info && Object.keys(formData.financial_info).length > 0,
+        hasMarriageInfo: !!formData.marriage_info && Object.keys(formData.marriage_info).length > 0,
+        hasCourtInfo: !!formData.court_info && Object.keys(formData.court_info).length > 0,
+        personalInfoKeys: Object.keys(formData.personal_info),
+        financialInfoKeys: Object.keys(formData.financial_info),
+        hasIncome: !!formData.financial_info.income,
+        incomeKeys: formData.financial_info.income ? Object.keys(formData.financial_info.income) : []
+      })
+      
+      return formData
     } catch (error) {
       console.error('Error fetching user data:', error)
       throw error
