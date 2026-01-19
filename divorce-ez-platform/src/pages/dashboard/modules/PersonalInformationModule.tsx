@@ -28,14 +28,22 @@ export default function PersonalInformationModule() {
     setLoading(true)
     setError(null)
     try {
+      console.log('📥 Loading personal information for user:', user.id)
       const data = await getFormData(user.id)
+      console.log('📦 Loaded form data:', {
+        hasPersonalInfo: !!data.personal_info,
+        hasSpouseInfo: !!data.spouse_info,
+        childrenCount: data.children?.length || 0,
+        hasMarriageInfo: !!data.marriage_info,
+        personalInfoKeys: data.personal_info ? Object.keys(data.personal_info) : [],
+      })
       setFormData(data)
       setPersonalInfo(data.personal_info || {})
       setSpouseInfo(data.spouse_info || {})
       setChildren(data.children || [])
       setMarriageInfo(data.marriage_info || {})
     } catch (err: any) {
-      console.error('Error loading personal information:', err)
+      console.error('❌ Error loading personal information:', err)
       setError(err.message || 'Failed to load personal information')
     } finally {
       setLoading(false)
@@ -161,6 +169,14 @@ export default function PersonalInformationModule() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 mb-2 tracking-tight">Personal Information</h1>
         <p className="text-gray-600">Review and update your personal information extracted from documents.</p>
+        {formData && !formData.personal_info && (
+          <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-sm text-amber-800">
+              <strong>No data found.</strong> Upload documents to extract personal information. 
+              Check the browser console for extraction logs.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Success/Error Messages */}

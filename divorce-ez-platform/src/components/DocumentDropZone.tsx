@@ -14,7 +14,10 @@ interface DocumentDropZoneProps {
   required?: boolean
   isUploaded: boolean
   uploadDate?: string
+  documentId?: string
+  fileName?: string
   onUploadComplete: () => void
+  onDelete?: (documentId: string) => Promise<void>
 }
 
 const documentHelpText: Record<DocumentType, string> = {
@@ -38,7 +41,10 @@ export default function DocumentDropZone({
   required,
   isUploaded,
   uploadDate,
+  documentId,
+  fileName,
   onUploadComplete,
+  onDelete,
 }: DocumentDropZoneProps) {
   const { user } = useAuth()
   const [isDragging, setIsDragging] = useState(false)
@@ -46,6 +52,7 @@ export default function DocumentDropZone({
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showHelp, setShowHelp] = useState(false)
 
@@ -67,24 +74,74 @@ export default function DocumentDropZone({
       e.stopPropagation()
       setIsDragging(false)
 
-      if (isUploaded || isProcessing || !user) return
+      if (isProcessing || isDeleting || !user) return
 
       const files = Array.from(e.dataTransfer.files)
       if (files.length > 0) {
-        await handleFileUpload(files[0])
+        // If already uploaded, replace it
+        if (isUploaded && documentId && onDelete) {
+          await handleReplace(files[0])
+        } else {
+          await handleFileUpload(files[0])
+        }
       }
     },
-    [isUploaded, isProcessing, user, documentType]
+    [isUploaded, isProcessing, isDeleting, user, documentType, documentId, onDelete]
   )
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files && e.target.files[0] && !isUploaded && !isProcessing && user) {
-        await handleFileUpload(e.target.files[0])
+      if (e.target.files && e.target.files[0] && !isProcessing && !isDeleting && user) {
+        // If already uploaded, replace it
+        if (isUploaded && documentId && onDelete) {
+          await handleReplace(e.target.files[0])
+        } else {
+          await handleFileUpload(e.target.files[0])
+        }
       }
     },
-    [isUploaded, isProcessing, user, documentType]
+    [isUploaded, isProcessing, isDeleting, user, documentType, documentId, onDelete]
   )
+
+  const handleDelete = async () => {
+    if (!documentId || !onDelete || !user) return
+    
+    if (!confirm(`Are you sure you want to delete this document? This will remove the file and its extracted data.`)) {
+      return
+    }
+
+    setIsDeleting(true)
+    setError(null)
+
+    try {
+      await onDelete(documentId)
+      onUploadComplete() // Refresh the list
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete document')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleReplace = async (file: File) => {
+    if (!documentId || !onDelete || !user) return
+
+    setIsProcessing(true)
+    setError(null)
+    setSuccess(false)
+    setProgress(0)
+
+    try {
+      // Delete old document first
+      await onDelete(documentId)
+      
+      // Upload new document
+      await handleFileUpload(file)
+    } catch (err: any) {
+      setError(err.message || 'Failed to replace document')
+      setIsProcessing(false)
+    }
+  }
 
   const handleFileUpload = async (file: File) => {
     if (!user) {
@@ -154,7 +211,10 @@ export default function DocumentDropZone({
       }
 
       // Update normalized form data
+      console.log('🔄 Migrating extracted data to normalized tables...')
+      console.log('Extracted data keys:', Object.keys(processed.extractedData || {}))
       await migrateFromExtractedData(user.id, processed.extractedData, documentType)
+      console.log('✅ Data migration completed')
 
       setProgress(100)
       setSuccess(true)
@@ -255,9 +315,42 @@ export default function DocumentDropZone({
           </div>
         )}
 
-        {/* Upload Date */}
-        {isUploaded && uploadDate && (
-          <p className="text-xs text-gray-500 mb-3 font-medium">Uploaded {new Date(uploadDate).toLocaleDateString()}</p>
+        {/* Upload Date and Actions */}
+        {isUploaded && (
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              {uploadDate && (
+                <p className="text-xs text-gray-500 font-medium">Uploaded {new Date(uploadDate).toLocaleDateString()}</p>
+              )}
+              {fileName && (
+                <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[200px]">{fileName}</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={isDeleting || isProcessing}
+                className="text-xs font-medium text-red-600 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 transition-colors disabled:opacity-50"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+              <label
+                htmlFor={`file-replace-${documentType}`}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50 transition-colors cursor-pointer"
+              >
+                Replace
+              </label>
+              <input
+                id={`file-replace-${documentType}`}
+                type="file"
+                className="sr-only"
+                onChange={handleFileSelect}
+                accept=".pdf,.jpg,.jpeg,.png"
+                disabled={isProcessing || isDeleting}
+              />
+            </div>
+          </div>
         )}
 
         {/* Drop Zone / Upload Area */}
@@ -267,6 +360,15 @@ export default function DocumentDropZone({
               htmlFor={`file-upload-${documentType}`}
               className="block cursor-pointer"
             >
+              <input
+                ref={fileInputRef}
+                id={`file-upload-${documentType}`}
+                type="file"
+                className="sr-only"
+                onChange={handleFileSelect}
+                accept=".pdf,.jpg,.jpeg,.png"
+                disabled={isProcessing || isDeleting}
+              />
               <div className="flex flex-col items-center justify-center py-8 px-4 border-2 border-dashed border-gray-300/60 rounded-xl bg-gradient-to-br from-gray-50/50 to-white hover:from-blue-50/80 hover:to-indigo-50/60 hover:border-blue-400/80 transition-all duration-300 cursor-pointer group/upload">
                 {isProcessing ? (
                   <>
@@ -306,15 +408,6 @@ export default function DocumentDropZone({
                   </>
                 )}
               </div>
-              <input
-                ref={fileInputRef}
-                id={`file-upload-${documentType}`}
-                type="file"
-                className="sr-only"
-                onChange={handleFileSelect}
-                accept=".pdf,.jpg,.jpeg,.png"
-                disabled={isProcessing}
-              />
             </label>
           </div>
         )}

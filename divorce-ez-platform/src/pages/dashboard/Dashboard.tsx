@@ -59,7 +59,74 @@ export default function Dashboard() {
   // Check which document types are uploaded
   const getDocumentStatus = (docType: string) => {
     const doc = uploadedDocuments.find(d => d.document_type === docType)
-    return doc ? { uploaded: true, status: doc.status, date: doc.uploaded_at } : { uploaded: false, status: null, date: null }
+    return doc 
+      ? { 
+          uploaded: true, 
+          status: doc.status, 
+          date: doc.uploaded_at,
+          id: doc.id,
+          fileName: doc.file_name
+        } 
+      : { 
+          uploaded: false, 
+          status: null, 
+          date: null,
+          id: undefined,
+          fileName: undefined
+        }
+  }
+
+  const handleDeleteDocument = async (documentId: string) => {
+    if (!user) return
+
+    try {
+      // Get document info to delete file from storage
+      const { data: doc, error: fetchError } = await supabase
+        .from('documents')
+        .select('file_path, extracted_data_id')
+        .eq('id', documentId)
+        .single()
+
+      if (fetchError) throw fetchError
+
+      // Delete from storage if file_path exists
+      if (doc.file_path) {
+        const { error: storageError } = await supabase.storage
+          .from('documents')
+          .remove([doc.file_path])
+
+        if (storageError) {
+          console.warn('⚠️ Failed to delete file from storage:', storageError)
+          // Continue with database deletion even if storage deletion fails
+        }
+      }
+
+      // Delete extracted_data if it exists
+      if (doc.extracted_data_id) {
+        const { error: dataError } = await supabase
+          .from('extracted_data')
+          .delete()
+          .eq('id', doc.extracted_data_id)
+
+        if (dataError) {
+          console.warn('⚠️ Failed to delete extracted data:', dataError)
+        }
+      }
+
+      // Delete document record
+      const { error: deleteError } = await supabase
+        .from('documents')
+        .delete()
+        .eq('id', documentId)
+
+      if (deleteError) throw deleteError
+
+      // Refresh documents list
+      await fetchDocuments()
+    } catch (err: any) {
+      console.error('Error deleting document:', err)
+      throw new Error(`Failed to delete document: ${err.message}`)
+    }
   }
 
   const modules = [
@@ -202,7 +269,10 @@ export default function Dashboard() {
                         required={doc.required}
                         isUploaded={status.uploaded}
                         uploadDate={status.date || undefined}
+                        documentId={status.id}
+                        fileName={status.fileName}
                         onUploadComplete={fetchDocuments}
+                        onDelete={handleDeleteDocument}
                       />
                     )
                   })}
