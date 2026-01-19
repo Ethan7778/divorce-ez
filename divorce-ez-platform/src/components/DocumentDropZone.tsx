@@ -179,43 +179,45 @@ export default function DocumentDropZone({
     <div
       className={`group relative bg-white border-2 border-dashed rounded-xl transition-all duration-300 ${
         isUploaded
-          ? 'border-green-300 bg-green-50 shadow-sm'
+          ? 'border-green-300/60 bg-gradient-to-br from-green-50/50 to-emerald-50/30 shadow-sm'
           : isDragging
-          ? 'border-blue-400 bg-blue-50 scale-[1.02] shadow-md'
-          : 'border-gray-300 hover:border-gray-400 hover:shadow-md'
+          ? 'border-blue-400 bg-gradient-to-br from-blue-50 to-indigo-50 scale-[1.02] shadow-lg'
+          : 'border-gray-300/60 hover:border-gray-400/80 hover:shadow-md bg-white'
       } ${isProcessing ? 'pointer-events-none opacity-75' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className="p-4">
+      <div className="p-5">
         {/* Header */}
-        <div className="flex items-start justify-between mb-2">
+        <div className="flex items-start justify-between mb-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
               <h3 className="text-sm font-semibold text-gray-900 truncate">{label}</h3>
               {priority === 1 && (
-                <span className="px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full flex-shrink-0">
+                <span className="px-2.5 py-1 text-xs font-medium bg-amber-100 text-amber-800 rounded-full flex-shrink-0 shadow-sm">
                   Anchor
                 </span>
               )}
               {required && (
-                <span className="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded-full flex-shrink-0">
+                <span className="px-2.5 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full flex-shrink-0 shadow-sm">
                   Required
                 </span>
               )}
             </div>
-            <p className="text-xs text-gray-600 mb-2">{description}</p>
+            <p className="text-xs text-gray-600 leading-relaxed">{description}</p>
           </div>
           {isUploaded && (
-            <div className="flex-shrink-0 ml-2">
-              <svg className="h-5 w-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                  clipRule="evenodd"
-                />
-              </svg>
+            <div className="flex-shrink-0 ml-3">
+              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center shadow-sm">
+                <svg className="h-5 w-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </div>
             </div>
           )}
         </div>
@@ -224,23 +226,23 @@ export default function DocumentDropZone({
         <button
           type="button"
           onClick={() => setShowHelp(!showHelp)}
-          className="text-xs text-blue-600 hover:text-blue-700 mb-2 flex items-center gap-1 transition-all duration-200 hover:gap-2"
+          className="text-xs font-medium text-blue-600 hover:text-blue-700 mb-3 flex items-center gap-1.5 transition-all duration-200 hover:gap-2 group"
         >
           <svg
-            className={`h-3 w-3 transition-transform duration-200 ${showHelp ? 'rotate-180' : ''}`}
+            className={`h-3.5 w-3.5 transition-transform duration-200 ${showHelp ? 'rotate-180' : ''}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
-          <span className="font-medium">{showHelp ? 'Hide instructions' : 'How to obtain this document'}</span>
+          <span>{showHelp ? 'Hide instructions' : 'How to obtain this document'}</span>
         </button>
 
         {/* Help Text */}
         {showHelp && (
-          <div className="mb-3 p-3 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg text-xs text-blue-900 animate-fade-in shadow-sm">
-            <div className="flex items-start gap-2">
+          <div className="mb-3 p-3.5 bg-gradient-to-br from-blue-50/80 to-indigo-50/60 border border-blue-200/60 rounded-lg text-xs text-blue-900 animate-fade-in shadow-sm backdrop-blur-sm">
+            <div className="flex items-start gap-2.5">
               <svg className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                 <path
                   fillRule="evenodd"
@@ -255,7 +257,7 @@ export default function DocumentDropZone({
 
         {/* Upload Date */}
         {isUploaded && uploadDate && (
-          <p className="text-xs text-gray-500 mb-2">Uploaded {new Date(uploadDate).toLocaleDateString()}</p>
+          <p className="text-xs text-gray-500 mb-3 font-medium">Uploaded {new Date(uploadDate).toLocaleDateString()}</p>
         )}
 
         {/* Drop Zone / Upload Area */}
@@ -265,7 +267,7 @@ export default function DocumentDropZone({
               htmlFor={`file-upload-${documentType}`}
               className="block cursor-pointer"
             >
-              <div className="flex flex-col items-center justify-center py-6 px-4 border-2 border-dashed border-gray-300 rounded-lg bg-gradient-to-br from-gray-50 to-white hover:from-blue-50 hover:to-indigo-50 hover:border-blue-400 transition-all duration-300 cursor-pointer">
+              <div className="flex flex-col items-center justify-center py-8 px-4 border-2 border-dashed border-gray-300/60 rounded-xl bg-gradient-to-br from-gray-50/50 to-white hover:from-blue-50/80 hover:to-indigo-50/60 hover:border-blue-400/80 transition-all duration-300 cursor-pointer group/upload">
                 {isProcessing ? (
                   <>
                     <svg
@@ -285,7 +287,7 @@ export default function DocumentDropZone({
                 ) : (
                   <>
                     <svg
-                      className="h-8 w-8 text-gray-400 mb-3 group-hover:text-blue-500 transition-all duration-300 group-hover:scale-110"
+                      className="h-10 w-10 text-gray-400 mb-3 group-hover/upload:text-blue-500 transition-all duration-300 group-hover/upload:scale-110"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -293,14 +295,14 @@ export default function DocumentDropZone({
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        strokeWidth={2}
+                        strokeWidth={1.5}
                         d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
                       />
                     </svg>
-                    <span className="text-sm font-medium text-gray-700 text-center mb-1 group-hover:text-blue-700 transition-colors">
+                    <span className="text-sm font-semibold text-gray-700 text-center mb-1.5 group-hover/upload:text-blue-700 transition-colors">
                       Click to upload or drag and drop
                     </span>
-                    <span className="text-xs text-gray-500">PDF, JPG, PNG up to 10MB</span>
+                    <span className="text-xs text-gray-500 font-medium">PDF, JPG, PNG up to 10MB</span>
                   </>
                 )}
               </div>
@@ -319,10 +321,10 @@ export default function DocumentDropZone({
 
         {/* Progress Bar */}
         {isProcessing && (
-          <div className="mt-2">
-            <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+          <div className="mt-3">
+            <div className="w-full bg-gray-200/60 rounded-full h-2 overflow-hidden shadow-inner">
               <div
-                className="bg-blue-600 h-1.5 rounded-full transition-all duration-300 ease-out"
+                className="bg-gradient-to-r from-blue-600 to-blue-500 h-2 rounded-full transition-all duration-300 ease-out shadow-sm"
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -331,29 +333,29 @@ export default function DocumentDropZone({
 
         {/* Error Message */}
         {error && (
-          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800 flex items-start gap-2 animate-fade-in">
-            <svg className="h-4 w-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+          <div className="mt-3 p-3 bg-red-50/80 border border-red-200/60 rounded-lg text-xs text-red-800 flex items-start gap-2.5 animate-fade-in shadow-sm backdrop-blur-sm">
+            <svg className="h-4 w-4 flex-shrink-0 mt-0.5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
               <path
                 fillRule="evenodd"
                 d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
                 clipRule="evenodd"
               />
             </svg>
-            <span>{error}</span>
+            <span className="font-medium leading-relaxed">{error}</span>
           </div>
         )}
 
         {/* Success Message */}
         {success && (
-          <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-800 flex items-center gap-2 animate-fade-in">
-            <svg className="h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <div className="mt-3 p-3 bg-green-50/80 border border-green-200/60 rounded-lg text-xs text-green-800 flex items-center gap-2.5 animate-fade-in shadow-sm backdrop-blur-sm">
+            <svg className="h-4 w-4 flex-shrink-0 text-green-600" fill="currentColor" viewBox="0 0 20 20">
               <path
                 fillRule="evenodd"
                 d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
                 clipRule="evenodd"
               />
             </svg>
-            <span>Upload successful!</span>
+            <span className="font-medium">Upload successful!</span>
           </div>
         )}
       </div>
