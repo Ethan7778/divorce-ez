@@ -379,6 +379,7 @@ function parseTaxReturn(text: string): Record<string, any> {
       }
     }
   }
+  }
 
   // Extract SSN (full, we'll store only last 4)
   const ssnMatch = text.match(/(?:Your social security number|SSN)[\s:]*(\d{3}[-.\s]?\d{2}[-.\s]?\d{4})/i)
@@ -402,31 +403,34 @@ function parseTaxReturn(text: string): Record<string, any> {
     data.filingStatus = 'head_of_household'
   }
 
-  // Extract address - look for actual address pattern after "Home address"
-  const addressMatch = text.match(/Home address[\s(]*\(number and street\)[\s:]*([0-9]+\s+[A-Z0-9\s,#\-\.]+?)(?:\s+Apt\.?\s+no\.?|City|State|ZIP)/i)
-  if (addressMatch) {
-    data.address = { street: addressMatch[1].trim() }
-  }
+  // Extract address - look for actual address pattern after "Home address" (Form 1040 format)
+  // Only if we haven't already extracted address from summary format
+  if (!data.address) {
+    const form1040AddressMatch = text.match(/Home address[\s(]*\(number and street\)[\s:]*([0-9]+\s+[A-Z0-9\s,#\-\.]+?)(?:\s+Apt\.?\s+no\.?|City|State|ZIP)/i)
+    if (form1040AddressMatch) {
+      data.address = { street: form1040AddressMatch[1].trim() }
+    }
 
-  // Extract city - look after "City, town, or post office"
-  const cityMatch = text.match(/City, town, or post office[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i)
-  if (cityMatch) {
-    if (!data.address) data.address = {}
-    data.address.city = cityMatch[1].trim()
-  }
+    // Extract city - look after "City, town, or post office"
+    const cityMatch = text.match(/City, town, or post office[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i)
+    if (cityMatch) {
+      if (!data.address) data.address = {}
+      data.address.city = cityMatch[1].trim()
+    }
 
-  // Extract state - look for 2-letter state code after "State"
-  const stateMatch = text.match(/State[\s:]*([A-Z]{2})(?:\s+ZIP)/i)
-  if (stateMatch) {
-    if (!data.address) data.address = {}
-    data.address.state = stateMatch[1].trim()
-  }
+    // Extract state - look for 2-letter state code after "State"
+    const stateMatch = text.match(/State[\s:]*([A-Z]{2})(?:\s+ZIP)/i)
+    if (stateMatch) {
+      if (!data.address) data.address = {}
+      data.address.state = stateMatch[1].trim()
+    }
 
-  // Extract ZIP code - look for 5 or 9 digit ZIP after "ZIP code"
-  const zipMatch = text.match(/ZIP code[\s:]*(\d{5}(?:-\d{4})?)/i)
-  if (zipMatch) {
-    if (!data.address) data.address = {}
-    data.address.zipCode = zipMatch[1].trim()
+    // Extract ZIP code - look for 5 or 9 digit ZIP after "ZIP code"
+    const zipMatch = text.match(/ZIP code[\s:]*(\d{5}(?:-\d{4})?)/i)
+    if (zipMatch) {
+      if (!data.address) data.address = {}
+      data.address.zipCode = zipMatch[1].trim()
+    }
   }
 
   // Extract spouse name (if joint filing) - look for "If joint return, spouse's first name"
