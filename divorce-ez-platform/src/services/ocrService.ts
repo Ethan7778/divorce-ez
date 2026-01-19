@@ -4,6 +4,9 @@
 
 import Tesseract from 'tesseract.js'
 import * as pdfjsLib from 'pdfjs-dist'
+import { extractWithGemini } from './geminiService'
+import { getExpectedFields, getCriticalFields } from './documentSchemas'
+import { logger } from '../utils/logger'
 
 // Configure PDF.js worker - use unpkg CDN which is more reliable
 if (typeof window !== 'undefined') {
@@ -33,27 +36,22 @@ export async function extractTextFromImage(
   onProgress?: (progress: number) => void
 ): Promise<OCRResult> {
   try {
-    console.log('🖼️ Starting OCR for image file:', file.name, 'Size:', file.size)
+    logger.debug('Starting OCR for image file', { fileName: file.name, fileSize: file.size })
     const { data } = await Tesseract.recognize(file, 'eng', {
       logger: (m) => {
         if (onProgress && m.status === 'recognizing text') {
           onProgress(m.progress)
         }
-        // Log OCR progress for debugging
-        if (m.status === 'recognizing text') {
-          console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`)
-        }
       },
     })
 
-    console.log('✅ OCR completed:', {
+    logger.debug('OCR completed', {
       textLength: data.text.length,
       confidence: data.confidence,
-      textPreview: data.text.substring(0, 200)
     })
 
     if (!data.text || data.text.trim().length === 0) {
-      console.warn('⚠️ OCR returned empty text')
+      logger.warn('OCR returned empty text')
       return {
         success: false,
         text: '',
@@ -66,11 +64,9 @@ export async function extractTextFromImage(
       text: data.text,
     }
   } catch (error: any) {
-    console.error('❌ OCR Error:', error)
-    console.error('Error details:', {
+    logger.error('OCR Error:', {
       message: error.message,
-      stack: error.stack,
-      name: error.name
+      name: error.name,
     })
     return {
       success: false,
@@ -88,13 +84,13 @@ export async function extractTextFromPDF(
   onProgress?: (progress: number) => void
 ): Promise<OCRResult> {
   try {
-    console.log('📄 Starting PDF text extraction:', file.name)
+    logger.debug('Starting PDF text extraction', { fileName: file.name })
     const arrayBuffer = await file.arrayBuffer()
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
     let fullText = ''
 
     const totalPages = pdf.numPages
-    console.log(`📄 PDF has ${totalPages} page(s)`)
+    logger.debug(`PDF has ${totalPages} page(s)`)
 
     for (let i = 1; i <= totalPages; i++) {
       const page = await pdf.getPage(i)
@@ -106,18 +102,17 @@ export async function extractTextFromPDF(
       if (onProgress) {
         onProgress(i / totalPages)
       }
-      
-      console.log(`Page ${i}/${totalPages} extracted: ${pageText.length} characters`)
     }
 
-    console.log('✅ PDF text extraction complete:', {
+    logger.debug('PDF text extraction complete', {
       totalLength: fullText.length,
-      textPreview: fullText.substring(0, 200)
     })
 
     // If PDF has no extractable text, fall back to OCR
     if (fullText.trim().length < 10) {
-      console.warn('⚠️ PDF has no extractable text (only ' + fullText.trim().length + ' chars), falling back to OCR')
+      logger.warn('PDF has no extractable text, falling back to OCR', {
+        textLength: fullText.trim().length,
+      })
       return await extractTextFromImage(file, onProgress)
     }
 
@@ -126,13 +121,11 @@ export async function extractTextFromPDF(
       text: fullText,
     }
   } catch (error: any) {
-    console.error('❌ PDF extraction error:', error)
-    console.error('Error details:', {
+    logger.error('PDF extraction error', {
       message: error.message,
-      stack: error.stack,
-      name: error.name
+      name: error.name,
     })
-    console.log('🔄 Falling back to OCR for PDF...')
+    logger.debug('Falling back to OCR for PDF')
     // Fallback to OCR if PDF extraction fails
     return await extractTextFromImage(file, onProgress)
   }
@@ -161,15 +154,63 @@ export async function extractTextFromFile(
 /**
  * Parse document text based on document type
  */
+/**
+ * Check if Gemini fallback should be used
+ * Returns true if extraction quality is low (<50% fields or critical fields missing)
+ */
+function shouldUseGemini(extractedData: Record<string, any>, documentType: string): boolean {
+  // Skip Gemini for document types we don't support yet
+  const supportedTypes = ['payStub', 'marriageCertificate', 'bankStatement', 'taxReturn']
+  if (!supportedTypes.includes(documentType)) {
+    return false
+  }
+
+  const expectedFields = getExpectedFields(documentType)
+  const criticalFields = getCriticalFields(documentType)
+
+  if (expectedFields.length === 0) {
+    return false
+  }
+
+  // Count extracted fields (excluding rawText)
+  const extractedFields = Object.keys(extractedData).filter(
+    (key) => key !== 'rawText' && extractedData[key] !== null && extractedData[key] !== undefined && extractedData[key] !== ''
+  )
+
+  const extractionRate = extractedFields.length / expectedFields.length
+
+  // Check if critical fields are missing
+  const missingCriticalFields = criticalFields.filter(
+    (field) => !extractedData[field] || extractedData[field] === null || extractedData[field] === ''
+  )
+
+  // Use Gemini if:
+  // 1. Less than 50% of expected fields extracted, OR
+  // 2. Any critical fields are missing
+  const shouldUse = extractionRate < 0.5 || missingCriticalFields.length > 0
+
+  if (shouldUse) {
+    logger.debug('Gemini fallback triggered', {
+      documentType,
+      extractionRate: `${Math.round(extractionRate * 100)}%`,
+      extractedFields: extractedFields.length,
+      expectedFields: expectedFields.length,
+      missingCriticalFields: missingCriticalFields.length,
+    })
+  }
+
+  return shouldUse
+}
+
 export function parseDocumentText(text: string, documentType: string): Record<string, any> {
   const extractedData: Record<string, any> = { rawText: text }
 
   if (!text || text.trim().length === 0) {
-    console.warn('⚠️ Empty text provided to parseDocumentText')
+    logger.warn('Empty text provided to parseDocumentText')
     return extractedData
   }
 
-  console.log(`📝 Parsing ${documentType} document, text length: ${text.length}`)
+  logger.debug(`Parsing ${documentType} document`, { textLength: text.length })
 
   let parsedData: Record<string, any>
   
@@ -200,7 +241,7 @@ export function parseDocumentText(text: string, documentType: string): Record<st
       parsedData = parseProfitAndLoss(text)
       break
     default:
-      console.warn(`⚠️ Unknown document type: ${documentType}, returning raw text only`)
+      logger.warn(`Unknown document type: ${documentType}, returning raw text only`)
       parsedData = extractedData
   }
 
@@ -209,10 +250,10 @@ export function parseDocumentText(text: string, documentType: string): Record<st
 
   // Log parsing results
   const extractedKeys = Object.keys(parsedData).filter(k => k !== 'rawText')
-  console.log(`✅ Parsed ${documentType}:`, {
+  logger.debug(`Parsed ${documentType}`, {
     extractedFields: extractedKeys.length,
     fields: extractedKeys,
-    hasData: extractedKeys.length > 0
+    hasData: extractedKeys.length > 0,
   })
 
   return parsedData
@@ -547,8 +588,9 @@ function parseTaxReturn(text: string): Record<string, any> {
 
   // Log what we extracted
   const extractedKeys = Object.keys(data).filter(k => k !== 'rawText')
-  console.log(`✅ parseTaxReturn extracted ${extractedKeys.length} fields:`, extractedKeys)
-  console.log('📊 Extracted data:', data)
+  logger.debug(`parseTaxReturn extracted ${extractedKeys.length} fields`, {
+    fields: extractedKeys,
+  })
 
   // FALLBACK: Extract from compact format (values at end of OCR text)
   // Pattern: AMOUNTS... NAME SSN NAME SSN ADDRESS CITY, STATE ZIP AMOUNTS... DEPENDENTS
@@ -1124,11 +1166,11 @@ export async function processDocument(
   onProgress?: (progress: number) => void
 ): Promise<ProcessedDocument> {
   try {
-    console.log('🔍 Starting document processing:', {
+    logger.debug('Starting document processing', {
       fileName: file.name,
       fileType: file.type,
       fileSize: file.size,
-      documentType
+      documentType,
     })
 
     // Extract text
@@ -1139,7 +1181,7 @@ export async function processDocument(
     })
 
     if (!ocrResult.success) {
-      console.error('❌ OCR extraction failed:', ocrResult.error)
+      logger.error('OCR extraction failed', { error: ocrResult.error })
       return {
         success: false,
         documentType,
@@ -1149,34 +1191,61 @@ export async function processDocument(
       }
     }
 
-    console.log('✅ OCR extraction successful:', {
+    logger.debug('OCR extraction successful', {
       textLength: ocrResult.text.length,
-      textPreview: ocrResult.text.substring(0, 200) + '...'
     })
 
-    // Parse text
+    // Parse text with regex first
     if (onProgress) {
-      onProgress(0.9)
+      onProgress(0.85)
     }
 
-    console.log('📝 Parsing document text for type:', documentType)
-    const extractedData = parseDocumentText(ocrResult.text, documentType)
-    
-    console.log('✅ Parsing complete:', {
-      extractedKeys: Object.keys(extractedData),
-      extractedKeyCount: Object.keys(extractedData).length,
-      hasData: Object.keys(extractedData).length > 1, // More than just rawText
-      sampleData: Object.keys(extractedData).slice(0, 5).reduce((acc, key) => {
-        if (key !== 'rawText') {
-          acc[key] = extractedData[key]
+    logger.debug('Parsing document text', { documentType })
+    let extractedData = parseDocumentText(ocrResult.text, documentType)
+
+    // Check if we should use Gemini fallback
+    const useGemini = shouldUseGemini(extractedData, documentType)
+    let extractionMethod = 'regex'
+
+    if (useGemini) {
+      try {
+        logger.debug('Using Gemini API for improved extraction')
+        if (onProgress) {
+          onProgress(0.90)
         }
-        return acc
-      }, {} as Record<string, any>)
-    })
+
+        const geminiData = await extractWithGemini(ocrResult.text, documentType)
+
+        // Merge Gemini results with regex results (Gemini takes precedence)
+        // Keep rawText from regex parsing
+        extractedData = {
+          ...extractedData,
+          ...geminiData,
+          rawText: extractedData.rawText, // Preserve rawText
+        }
+
+        extractionMethod = 'gemini'
+        logger.debug('Gemini extraction complete', {
+          extractedKeys: Object.keys(extractedData).filter(k => k !== 'rawText').length,
+        })
+      } catch (geminiError: any) {
+        logger.warn('Gemini extraction failed, using regex results', {
+          error: geminiError.message,
+        })
+        // Continue with regex results if Gemini fails
+      }
+    }
 
     if (onProgress) {
       onProgress(1.0)
     }
+
+    logger.debug('Document processing complete', {
+      documentType,
+      extractionMethod,
+      extractedKeys: Object.keys(extractedData).filter(k => k !== 'rawText').length,
+      hasData: Object.keys(extractedData).length > 1,
+    })
 
     return {
       success: true,
@@ -1185,11 +1254,9 @@ export async function processDocument(
       rawText: ocrResult.text,
     }
   } catch (error: any) {
-    console.error('❌ Document processing error:', error)
-    console.error('Error details:', {
+    logger.error('Document processing error', {
       message: error.message,
-      stack: error.stack,
-      name: error.name
+      documentType,
     })
     return {
       success: false,

@@ -1,5 +1,63 @@
 export type DocumentType = 'driversLicense' | 'taxReturn' | 'payStub' | 'bankStatement' | 'w2' | '1099' | 'marriageCertificate' | 'priorCourtOrder' | 'profitAndLoss'
 
+// Gemini extraction result types (matching documentSchemas.ts)
+export interface PayStubExtraction {
+  employeeFullName?: string | null
+  employerName?: string | null
+  employerAddress?: string | null
+  payPeriodStart?: string | null
+  payPeriodEnd?: string | null
+  payFrequency?: 'weekly' | 'biweekly' | 'monthly' | 'yearly' | null
+  grossIncomeCurrent?: number | null
+  grossIncomeYTD?: number | null
+  netIncomeCurrent?: number | null
+  federalTaxWithheld?: number | null
+  stateTaxWithheld?: number | null
+  socialSecurityTax?: number | null
+  medicareTax?: number | null
+  healthInsuranceDeduction?: number | null
+  retirementDeduction?: number | null
+  otherDeductionsTotal?: number | null
+}
+
+export interface MarriageCertificateExtraction {
+  spouse1FullName?: string | null
+  spouse2FullName?: string | null
+  marriageDate?: string | null
+  marriagePlace?: string | null
+  certificateNumber?: string | null
+  issuingAuthority?: string | null
+  officiantName?: string | null
+}
+
+export interface BankStatementExtraction {
+  accountHolderNames?: string | null
+  financialInstitutionName?: string | null
+  accountType?: 'checking' | 'savings' | 'money_market' | null
+  accountNumberLast4?: string | null
+  statementStartDate?: string | null
+  statementEndDate?: string | null
+  beginningBalance?: number | null
+  endingBalance?: number | null
+  totalDeposits?: number | null
+  totalWithdrawals?: number | null
+}
+
+export interface TaxReturnExtraction {
+  taxYear?: number | null
+  filingStatus?: 'single' | 'married_joint' | 'married_separate' | 'head_of_household' | null
+  taxpayerName?: string | null
+  spouseName?: string | null
+  adjustedGrossIncome?: number | null
+  totalIncome?: number | null
+  wages?: number | null
+  interestIncome?: number | null
+  dividendIncome?: number | null
+  businessIncome?: number | null
+  totalTax?: number | null
+  refundOrAmountOwed?: number | null
+}
+
 export interface Document {
   id: string
   user_id: string
