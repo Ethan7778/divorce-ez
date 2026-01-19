@@ -4,6 +4,7 @@ import { useProgress } from '../../hooks/useProgress'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import DocumentDropZone from '../../components/DocumentDropZone'
+import PersonalInformationModule from './modules/PersonalInformationModule'
 import type { Document } from '../../types'
 
 type ModuleView = 'overview' | 'personal' | 'financial' | 'review' | 'guidance' | 'checklist'
@@ -270,6 +271,8 @@ export default function Dashboard() {
                 </svg>
                 Back to Home
               </button>
+
+              {activeModule === 'personal' && <PersonalInformationModule />}
             </div>
           )}
         </main>
