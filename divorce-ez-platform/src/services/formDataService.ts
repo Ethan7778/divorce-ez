@@ -73,20 +73,54 @@ export async function updatePersonalInfo(
   userId: string,
   data: Partial<Omit<PersonalInfoRow, 'id' | 'user_id' | 'last_updated'>>
 ): Promise<PersonalInfoRow> {
+  console.log('💾 updatePersonalInfo called:', {
+    userId,
+    dataKeys: Object.keys(data),
+    dataValues: data,
+  })
+
+  if (!userId) {
+    throw new Error('User ID is required for updatePersonalInfo')
+  }
+
+  const payload = {
+    user_id: userId,
+    ...data,
+    last_updated: new Date().toISOString(),
+  }
+
+  console.log('📤 Upserting to personal_info:', payload)
+
+  // Verify authentication
+  const { data: { user: authUser } } = await supabase.auth.getUser()
+  console.log('🔐 Auth check:', {
+    authUserId: authUser?.id,
+    targetUserId: userId,
+    match: authUser?.id === userId,
+  })
+
+  if (!authUser || authUser.id !== userId) {
+    throw new Error(`Authentication mismatch: auth user is ${authUser?.id || 'null'}, but trying to update ${userId}`)
+  }
+
   const { data: result, error } = await supabase
     .from('personal_info')
-    .upsert(
-      {
-        user_id: userId,
-        ...data,
-        last_updated: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' }
-    )
+    .upsert(payload, { onConflict: 'user_id' })
     .select()
     .single()
 
-  if (error) throw error
+  if (error) {
+    console.error('❌ Error upserting personal_info:', error)
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    })
+    throw error
+  }
+
+  console.log('✅ Personal info upserted successfully:', result)
   return result
 }
 
@@ -325,10 +359,15 @@ export async function migrateFromExtractedData(
   documentType?: string
 ): Promise<void> {
   try {
+    if (!userId) {
+      throw new Error('User ID is required for data migration')
+    }
+    
     console.log('🔄 Migrating extracted data to normalized tables:', {
       userId,
       documentType,
       extractedKeys: Object.keys(extractedData),
+      extractedDataSample: JSON.stringify(extractedData, null, 2).substring(0, 1000),
     })
 
     // Helper to get value with fallbacks
@@ -340,7 +379,13 @@ export async function migrateFromExtractedData(
     }
 
     // Get existing data to merge intelligently
+    console.log('📥 Fetching existing form data for user:', userId)
     const existingData = await getFormData(userId)
+    console.log('📦 Existing data:', {
+      hasPersonalInfo: !!existingData.personal_info,
+      hasSpouseInfo: !!existingData.spouse_info,
+      childrenCount: existingData.children?.length || 0,
+    })
 
     // ========================================================================
     // Personal Info (Spouse 1)
@@ -405,13 +450,48 @@ export async function migrateFromExtractedData(
         }
       }
 
+      // Check if we have ANY extracted data that could be personal info
+      const hasAnyPersonalData = 
+        getValue(extractedData, 'firstName', 'first_name', 'fname') ||
+        getValue(extractedData, 'lastName', 'last_name', 'lname') ||
+        getValue(extractedData, 'dateOfBirth', 'dob', 'birthDate') ||
+        getValue(extractedData, 'ssn', 'ssnLast4', 'socialSecurity') ||
+        extractedData.address ||
+        getValue(extractedData, 'email') ||
+        getValue(extractedData, 'phone') ||
+        getValue(extractedData, 'licenseNumber', 'driverLicenseNumber')
+
+      console.log('🔍 Personal info check:', {
+        hasPersonalInfoUpdates,
+        personalInfoUpdatesKeys: Object.keys(personalInfoUpdates),
+        hasAnyPersonalData,
+        extractedDataKeys: Object.keys(extractedData),
+      })
+
       // Always update if we have any updates, or if we need to create a record
       if (hasPersonalInfoUpdates || Object.keys(personalInfoUpdates).length > 0) {
         console.log('💾 Updating personal_info with:', personalInfoUpdates)
-        await updatePersonalInfo(userId, personalInfoUpdates)
-        console.log('✅ Personal info updated successfully')
+        console.log('💾 User ID:', userId)
+        try {
+          const result = await updatePersonalInfo(userId, personalInfoUpdates)
+          console.log('✅ Personal info updated successfully:', result)
+        } catch (updateError: any) {
+          console.error('❌ Error updating personal_info:', updateError)
+          console.error('Error details:', {
+            message: updateError.message,
+            code: updateError.code,
+            details: updateError.details,
+            hint: updateError.hint,
+          })
+          throw updateError
+        }
+      } else if (hasAnyPersonalData) {
+        // We have data but it didn't match our field checks - log for debugging
+        console.warn('⚠️ Found personal data but no fields matched:', {
+          extractedDataSample: JSON.stringify(extractedData, null, 2).substring(0, 1000),
+        })
       } else {
-        console.log('⚠️ No personal info updates to save')
+        console.log('⚠️ No personal info updates to save - no personal data found in extracted data')
       }
 
     // ========================================================================

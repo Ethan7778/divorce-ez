@@ -212,9 +212,26 @@ export default function DocumentDropZone({
 
       // Update normalized form data
       console.log('🔄 Migrating extracted data to normalized tables...')
+      console.log('User ID:', user.id)
       console.log('Extracted data keys:', Object.keys(processed.extractedData || {}))
-      await migrateFromExtractedData(user.id, processed.extractedData, documentType)
-      console.log('✅ Data migration completed')
+      console.log('Extracted data:', JSON.stringify(processed.extractedData, null, 2))
+      
+      if (!user.id) {
+        throw new Error('User ID is missing. Please log in again.')
+      }
+      
+      try {
+        await migrateFromExtractedData(user.id, processed.extractedData, documentType)
+        console.log('✅ Data migration completed')
+      } catch (migrationError: any) {
+        console.error('❌ Migration error:', migrationError)
+        console.error('Migration error details:', {
+          message: migrationError.message,
+          stack: migrationError.stack,
+        })
+        // Don't throw - allow document upload to succeed even if migration fails
+        // User can manually edit data later
+      }
 
       setProgress(100)
       setSuccess(true)
