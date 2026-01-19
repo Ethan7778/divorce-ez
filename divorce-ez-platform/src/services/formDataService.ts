@@ -812,3 +812,92 @@ export async function migrateFromExtractedData(
     throw error
   }
 }
+
+/**
+ * Re-aggregate all form data from all remaining documents for a user
+ * This is called when a document is deleted or replaced to ensure data consistency
+ */
+export async function reAggregateFormDataFromDocuments(userId: string): Promise<void> {
+  try {
+    console.log('🔄 Re-aggregating form data from all documents for user:', userId)
+
+    // Get all documents for this user
+    const { data: documents, error: docsError } = await supabase
+      .from('documents')
+      .select('id, document_type')
+      .eq('user_id', userId)
+      .eq('status', 'processed')
+      .order('uploaded_at', { ascending: false })
+
+    if (docsError) throw docsError
+
+    if (!documents || documents.length === 0) {
+      console.log('⚠️ No documents found, clearing normalized tables')
+      // Clear all normalized data if no documents remain
+      await Promise.all([
+        supabase.from('personal_info').delete().eq('user_id', userId),
+        supabase.from('spouse_info').delete().eq('user_id', userId),
+        supabase.from('children').delete().eq('user_id', userId),
+        supabase.from('income').delete().eq('user_id', userId),
+        supabase.from('employers').delete().eq('user_id', userId),
+        supabase.from('expenses').delete().eq('user_id', userId),
+        supabase.from('assets').delete().eq('user_id', userId),
+        supabase.from('debts').delete().eq('user_id', userId),
+        supabase.from('marriage_info').delete().eq('user_id', userId),
+        supabase.from('court_info').delete().eq('user_id', userId),
+      ])
+      return
+    }
+
+    // Get all extracted_data for these documents
+    const documentIds = documents.map(d => d.id)
+    const { data: extractedDataRecords, error: dataError } = await supabase
+      .from('extracted_data')
+      .select('id, document_id, data')
+      .in('document_id', documentIds)
+
+    if (dataError) throw dataError
+
+    if (!extractedDataRecords || extractedDataRecords.length === 0) {
+      console.log('⚠️ No extracted data found')
+      return
+    }
+
+    // Clear existing normalized data
+    console.log('🗑️ Clearing existing normalized data...')
+    await Promise.all([
+      supabase.from('personal_info').delete().eq('user_id', userId),
+      supabase.from('spouse_info').delete().eq('user_id', userId),
+      supabase.from('children').delete().eq('user_id', userId),
+      supabase.from('income').delete().eq('user_id', userId),
+      supabase.from('employers').delete().eq('user_id', userId),
+      supabase.from('expenses').delete().eq('user_id', userId),
+      supabase.from('assets').delete().eq('user_id', userId),
+      supabase.from('debts').delete().eq('user_id', userId),
+      supabase.from('marriage_info').delete().eq('user_id', userId),
+      supabase.from('court_info').delete().eq('user_id', userId),
+    ])
+
+    // Re-migrate all extracted data (process in reverse order so newest overwrites oldest)
+    // This ensures the most recent document's data takes precedence
+    const sortedRecords = extractedDataRecords.sort((a, b) => {
+      const docA = documents.find(d => d.id === a.document_id)
+      const docB = documents.find(d => d.id === b.document_id)
+      return 0 // We'll process in document upload order (newest first from query)
+    })
+
+    console.log(`📊 Re-migrating ${sortedRecords.length} extracted data records...`)
+    for (const record of sortedRecords.reverse()) { // Process oldest first, newest last (so newest overwrites)
+      const doc = documents.find(d => d.id === record.document_id)
+      if (doc && record.data) {
+        console.log(`🔄 Migrating data from document ${doc.document_type}...`)
+        await migrateFromExtractedData(userId, record.data, doc.document_type)
+      }
+    }
+
+    console.log('✅ Re-aggregation complete')
+  } catch (error) {
+    console.error('❌ Error re-aggregating form data:', error)
+    throw error
+  }
+}

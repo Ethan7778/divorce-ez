@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { processDocument } from '../services/ocrService'
-import { migrateFromExtractedData } from '../services/formDataService'
+import { migrateFromExtractedData, reAggregateFormDataFromDocuments } from '../services/formDataService'
 import type { DocumentType } from '../types'
 
 interface DocumentDropZoneProps {
@@ -132,14 +132,28 @@ export default function DocumentDropZone({
     setProgress(0)
 
     try {
-      // Delete old document first
+      // Delete old document first (this will trigger re-aggregation)
       await onDelete(documentId)
       
-      // Upload new document
+      // Small delay to ensure state updates and re-aggregation completes
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Upload new document (this will add new data on top)
       await handleFileUpload(file)
+      
+      // Re-aggregate to ensure newest document's data takes precedence
+      console.log('🔄 Re-aggregating form data after document replacement...')
+      try {
+        await reAggregateFormDataFromDocuments(user.id)
+        console.log('✅ Form data re-aggregated after replacement')
+      } catch (reAggError: any) {
+        console.error('⚠️ Error re-aggregating after replacement:', reAggError)
+        // Don't throw - document is uploaded, re-aggregation is secondary
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to replace document')
       setIsProcessing(false)
+      setProgress(0)
     }
   }
 

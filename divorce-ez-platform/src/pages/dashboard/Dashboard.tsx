@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import DocumentDropZone from '../../components/DocumentDropZone'
 import PersonalInformationModule from './modules/PersonalInformationModule'
+import { reAggregateFormDataFromDocuments } from '../../services/formDataService'
 import type { Document } from '../../types'
 
 type ModuleView = 'overview' | 'personal' | 'financial' | 'review' | 'guidance' | 'checklist'
@@ -120,6 +121,16 @@ export default function Dashboard() {
         .eq('id', documentId)
 
       if (deleteError) throw deleteError
+
+      // Re-aggregate form data from all remaining documents
+      console.log('🔄 Re-aggregating form data after document deletion...')
+      try {
+        await reAggregateFormDataFromDocuments(user.id)
+        console.log('✅ Form data re-aggregated successfully')
+      } catch (reAggError: any) {
+        console.error('⚠️ Error re-aggregating form data:', reAggError)
+        // Don't throw - document is deleted, re-aggregation is secondary
+      }
 
       // Refresh documents list
       await fetchDocuments()

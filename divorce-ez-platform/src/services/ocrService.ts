@@ -263,9 +263,100 @@ function parseDriversLicense(text: string): Record<string, any> {
 function parseTaxReturn(text: string): Record<string, any> {
   const data: Record<string, any> = {}
 
+  // First, try to parse summary report format (like "Tax Summary Report")
+  // Pattern: "Primary Name   Alex Sample" or "Primary Name: Alex Sample"
+  // Handle HTML tags that might be in the text
+  const cleanText = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+  
+  const primaryNameMatch = cleanText.match(/Primary\s+Name[\s:]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i)
+  if (primaryNameMatch) {
+    const fullName = primaryNameMatch[1].trim()
+    const nameParts = fullName.split(/\s+/)
+    if (nameParts.length >= 2) {
+      data.firstName = nameParts[0]
+      data.lastName = nameParts[nameParts.length - 1]
+      if (nameParts.length > 2) {
+        data.middleName = nameParts.slice(1, -1).join(' ')
+      }
+    }
+  }
+
+  // Extract spouse name from summary format: "Spouse / Partner   Jamie Sample"
+  const spouseMatch = cleanText.match(/Spouse\s*\/\s*Partner[\s:]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i)
+  if (spouseMatch) {
+    data.spouseName = spouseMatch[1].trim()
+  }
+
+  // Extract filing status from summary format: "Filing Status   Married (Joint)"
+  const filingStatusMatch = cleanText.match(/Filing\s+Status[\s:]+([A-Z][a-z]+(?:\s+\([A-Za-z]+\))?)/i)
+  if (filingStatusMatch) {
+    const status = filingStatusMatch[1].toLowerCase()
+    if (status.includes('single')) {
+      data.filingStatus = 'single'
+    } else if (status.includes('joint')) {
+      data.filingStatus = 'married_joint'
+    } else if (status.includes('separate')) {
+      data.filingStatus = 'married_separate'
+    } else if (status.includes('head')) {
+      data.filingStatus = 'head_of_household'
+    }
+  }
+
+  // Extract address from summary format: "Address   123 Example Ave, Example City, ST 00000"
+  const addressMatch = cleanText.match(/Address[\s:]+([0-9]+\s+[A-Z0-9\s,#\-\.]+(?:,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)?,\s*[A-Z]{2}\s+\d{5})/i)
+  if (addressMatch) {
+    const fullAddress = addressMatch[1].trim()
+    const addressParts = fullAddress.split(/,\s*/)
+    if (addressParts.length >= 3) {
+      const stateZip = addressParts[2].trim().split(/\s+/)
+      data.address = {
+        street: addressParts[0].trim(),
+        city: addressParts[1].trim(),
+        state: stateZip[0] || '',
+        zipCode: stateZip[1] || stateZip[0] || '',
+      }
+    } else if (addressParts.length === 1) {
+      data.address = { street: addressParts[0].trim() }
+    }
+  }
+
+  // Extract income from summary format
+  // "Wages & Salaries   $82,500" or "Wages & Salaries   $82,500"
+  const wagesMatch = cleanText.match(/Wages\s*(?:&|and)?\s*Salaries[\s:]+\$?([\d,]+\.?\d*)/i)
+  if (wagesMatch) {
+    const amount = parseFloat(wagesMatch[1].replace(/,/g, ''))
+    if (amount > 0 && amount < 10000000) {
+      data.wageIncome = amount
+      data.annualIncome = amount
+    }
+  }
+
+  // "Self-Employment / Business Income   $12,300"
+  const selfEmpMatch = cleanText.match(/Self[\s-]?Employment\s*\/\s*Business\s+Income[\s:]+\$?([\d,]+\.?\d*)/i)
+  if (selfEmpMatch) {
+    const amount = parseFloat(selfEmpMatch[1].replace(/,/g, ''))
+    if (amount > 0 && amount < 10000000) {
+      data.selfEmploymentIncome = amount
+      data.annualIncome = (data.annualIncome || 0) + amount
+    }
+  }
+
+  // "Total Income   $95,220" (may have HTML tags)
+  const totalIncomeMatch = cleanText.match(/Total\s+Income[\s:]+\$?([\d,]+\.?\d*)/i)
+  if (totalIncomeMatch) {
+    const amount = parseFloat(totalIncomeMatch[1].replace(/,/g, ''))
+    if (amount > 0 && amount < 10000000) {
+      data.totalIncome = amount
+      if (!data.annualIncome || amount > data.annualIncome) {
+        data.annualIncome = amount
+      }
+    }
+  }
+
   // Extract primary taxpayer name - look for actual name fields, not labels
   // Form 1040 has: "Your first name and middle initial" followed by "Last name"
-  const nameSectionMatch = text.match(/Your first name and middle initial[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z\.]+)*)\s+Last name[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i)
+  if (!data.firstName) {
+    const nameSectionMatch = text.match(/Your first name and middle initial[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z\.]+)*)\s+Last name[\s:]*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i)
   if (nameSectionMatch) {
     const firstMiddle = nameSectionMatch[1].trim()
     const nameParts = firstMiddle.split(/\s+/)
@@ -449,6 +540,11 @@ function parseTaxReturn(text: string): Record<string, any> {
   if (employers.length > 0) {
     data.employers = employers
   }
+
+  // Log what we extracted
+  const extractedKeys = Object.keys(data).filter(k => k !== 'rawText')
+  console.log(`✅ parseTaxReturn extracted ${extractedKeys.length} fields:`, extractedKeys)
+  console.log('📊 Extracted data:', data)
 
   // FALLBACK: Extract from compact format (values at end of OCR text)
   // Pattern: AMOUNTS... NAME SSN NAME SSN ADDRESS CITY, STATE ZIP AMOUNTS... DEPENDENTS
